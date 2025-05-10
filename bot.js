@@ -26,15 +26,22 @@ process.on('unhandledRejection', (error) => {
 console.log('Starting bot initialization...');
 
 // Initialize bot with your token and polling options
-const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { 
-    polling: {
-        interval: 300,
-        autoStart: true,
-        params: {
-            timeout: 10
+let bot;
+try {
+    bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { 
+        polling: {
+            interval: 300,
+            autoStart: true,
+            params: {
+                timeout: 10
+            }
         }
-    }
-});
+    });
+    console.log('Bot instance created successfully');
+} catch (error) {
+    console.error('Failed to create bot instance:', error);
+    process.exit(1);
+}
 
 // Add bot event listeners for debugging
 bot.on('polling_error', (error) => {
@@ -47,6 +54,11 @@ bot.on('webhook_error', (error) => {
 
 bot.on('error', (error) => {
     console.error('Bot error:', error);
+});
+
+// Add message handler for debugging
+bot.on('message', (msg) => {
+    console.log('Received message:', msg);
 });
 
 console.log('Bot instance created, setting up event handlers...');
@@ -170,23 +182,34 @@ const helpMessage = `*Solana Tip Bot Commands* 📚
 • Keep your private keys safe
 • Use testnet SOL only`;
 
-// Handle /start command
+// Handle /start command with error handling
 bot.onText(/\/start/, async (msg) => {
+    console.log('Received /start command:', msg);
     const chatId = msg.chat.id;
     
-    // Send welcome message with buttons
-    const keyboard = {
-        inline_keyboard: [
-            [{ text: "💰 Create/View Wallet", callback_data: "create_wallet" }],
-            [{ text: "📝 Tutorial", callback_data: "tutorial" }],
-            [{ text: "❓ Help", callback_data: "help" }]
-        ]
-    };
-    
-    await bot.sendMessage(chatId, welcomeMessage, { 
-        parse_mode: 'Markdown',
-        reply_markup: keyboard
-    });
+    try {
+        // Send welcome message with buttons
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: "💰 Create/View Wallet", callback_data: "create_wallet" }],
+                [{ text: "📝 Tutorial", callback_data: "tutorial" }],
+                [{ text: "❓ Help", callback_data: "help" }]
+            ]
+        };
+        
+        await bot.sendMessage(chatId, welcomeMessage, { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+        });
+        console.log('Start message sent successfully');
+    } catch (error) {
+        console.error('Error in /start command:', error);
+        try {
+            await bot.sendMessage(chatId, 'Sorry, there was an error processing your request. Please try again later.');
+        } catch (sendError) {
+            console.error('Error sending error message:', sendError);
+        }
+    }
 });
 
 // Handle callback queries
