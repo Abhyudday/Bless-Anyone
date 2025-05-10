@@ -1,8 +1,4 @@
-// Remove dotenv config and add hardcoded variables
-// require('dotenv').config();
-const TELEGRAM_BOT_TOKEN = '7721938745:AAHGaWGqJlCcHbmiKlapve8cox3gFVVqzyE';
-const MONGODB_URI = 'mongodb+srv://singhsunita2772:Abhy@2004@cluster0.3qwp7fg.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0s';
-
+require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { 
     Keypair, 
@@ -12,130 +8,59 @@ const {
     SystemProgram, 
     LAMPORTS_PER_SOL 
 } = require('@solana/web3.js');
-const mongoose = require('mongoose');
+const fs = require('fs');
 
-// Add error handling for uncaught exceptions
-process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
-});
-
-process.on('unhandledRejection', (error) => {
-    console.error('Unhandled Rejection:', error);
-});
-
-console.log('Starting bot initialization...');
-
-// Initialize bot with your token and polling options
-let bot;
-try {
-    bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { 
-        polling: {
-            interval: 300,
-            autoStart: true,
-            params: {
-                timeout: 10
-            }
-        }
-    });
-    console.log('Bot instance created successfully');
-} catch (error) {
-    console.error('Failed to create bot instance:', error);
-    process.exit(1);
-}
-
-// Add bot event listeners for debugging
-bot.on('polling_error', (error) => {
-    console.error('Polling error:', error);
-});
-
-bot.on('webhook_error', (error) => {
-    console.error('Webhook error:', error);
-});
-
-bot.on('error', (error) => {
-    console.error('Bot error:', error);
-});
-
-// Add message handler for debugging
-bot.on('message', (msg) => {
-    console.log('Received message:', msg);
-});
-
-console.log('Bot instance created, setting up event handlers...');
+// Initialize bot with your token
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
 // Connect to Solana testnet
 const connection = new Connection('https://api.testnet.solana.com', 'confirmed');
 
-// MongoDB Schema
-const userWalletSchema = new mongoose.Schema({
-    userId: { type: String, required: true, unique: true },
-    privateKey: { type: String, required: true },
-    publicKey: { type: String, required: true },
-    createdAt: { type: Date, default: Date.now }
-});
+// File paths for wallet storage
+const WALLET_STORAGE_FILE = 'wallets.json';
 
-const claimWalletSchema = new mongoose.Schema({
-    username: { type: String, required: true, unique: true },
-    privateKey: { type: String, required: true },
-    publicKey: { type: String, required: true },
-    createdAt: { type: Date, default: Date.now }
-});
+// Load wallets from file or initialize empty maps
+let userWallets = new Map();
+let claimWallets = new Map();
 
-const UserWallet = mongoose.model('UserWallet', userWalletSchema);
-const ClaimWallet = mongoose.model('ClaimWallet', claimWalletSchema);
-
-// Connect to MongoDB with retry logic and better options
-const connectWithRetry = async () => {
-    const options = {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
-        serverSelectionTimeoutMS: 5000,
-        socketTimeoutMS: 45000,
-        connectTimeoutMS: 10000,
-        maxPoolSize: 10,
-        minPoolSize: 5,
-        retryWrites: true,
-        retryReads: true
-    };
-
+// Load existing wallets from file
+function loadWallets() {
     try {
-        console.log('Attempting to connect to MongoDB...');
-        await mongoose.connect(MONGODB_URI, options);
-        console.log('Successfully connected to MongoDB');
-    } catch (err) {
-        console.error('MongoDB connection error:', err);
-        console.log('Retrying connection in 5 seconds...');
-        setTimeout(connectWithRetry, 5000);
-    }
-};
-
-// Initial connection attempt
-connectWithRetry();
-
-// Handle MongoDB connection events
-mongoose.connection.on('error', (err) => {
-    console.error('MongoDB connection error:', err);
-});
-
-mongoose.connection.on('disconnected', () => {
-    console.log('MongoDB disconnected. Attempting to reconnect...');
-    connectWithRetry();
-});
-
-mongoose.connection.on('reconnected', () => {
-    console.log('MongoDB reconnected successfully');
-});
-
-// Add a test command to verify bot is working
-bot.onText(/\/test/, async (msg) => {
-    const chatId = msg.chat.id;
-    console.log('Received /test command from chat:', chatId);
-    try {
-        await bot.sendMessage(chatId, 'Bot is working! 🎉');
-        console.log('Test message sent successfully');
+        if (fs.existsSync(WALLET_STORAGE_FILE)) {
+            const data = JSON.parse(fs.readFileSync(WALLET_STORAGE_FILE, 'utf8'));
+            userWallets = new Map(Object.entries(data.userWallets));
+            claimWallets = new Map(Object.entries(data.claimWallets));
+            console.log('Wallets loaded successfully');
+        }
     } catch (error) {
-        console.error('Error sending test message:', error);
+        console.error('Error loading wallets:', error);
     }
+}
+
+// Save wallets to file
+function saveWallets() {
+    try {
+        const data = {
+            userWallets: Object.fromEntries(userWallets),
+            claimWallets: Object.fromEntries(claimWallets)
+        };
+        fs.writeFileSync(WALLET_STORAGE_FILE, JSON.stringify(data, null, 2));
+        console.log('Wallets saved successfully');
+    } catch (error) {
+        console.error('Error saving wallets:', error);
+    }
+}
+
+// Load wallets on startup
+loadWallets();
+
+// Save wallets periodically (every 5 minutes)
+setInterval(saveWallets, 5 * 60 * 1000);
+
+// Save wallets before process exit
+process.on('SIGINT', () => {
+    saveWallets();
+    process.exit();
 });
 
 // Function to get wallet balance
@@ -182,34 +107,23 @@ const helpMessage = `*Solana Tip Bot Commands* 📚
 • Keep your private keys safe
 • Use testnet SOL only`;
 
-// Handle /start command with error handling
+// Handle /start command
 bot.onText(/\/start/, async (msg) => {
-    console.log('Received /start command:', msg);
     const chatId = msg.chat.id;
     
-    try {
-        // Send welcome message with buttons
-        const keyboard = {
-            inline_keyboard: [
-                [{ text: "💰 Create/View Wallet", callback_data: "create_wallet" }],
-                [{ text: "📝 Tutorial", callback_data: "tutorial" }],
-                [{ text: "❓ Help", callback_data: "help" }]
-            ]
-        };
-        
-        await bot.sendMessage(chatId, welcomeMessage, { 
-            parse_mode: 'Markdown',
-            reply_markup: keyboard
-        });
-        console.log('Start message sent successfully');
-    } catch (error) {
-        console.error('Error in /start command:', error);
-        try {
-            await bot.sendMessage(chatId, 'Sorry, there was an error processing your request. Please try again later.');
-        } catch (sendError) {
-            console.error('Error sending error message:', sendError);
-        }
-    }
+    // Send welcome message with buttons
+    const keyboard = {
+        inline_keyboard: [
+            [{ text: "💰 Create/View Wallet", callback_data: "create_wallet" }],
+            [{ text: "📝 Tutorial", callback_data: "tutorial" }],
+            [{ text: "❓ Help", callback_data: "help" }]
+        ]
+    };
+    
+    await bot.sendMessage(chatId, welcomeMessage, { 
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
+    });
 });
 
 // Handle callback queries
@@ -221,7 +135,7 @@ bot.on('callback_query', async (callbackQuery) => {
     // Handle claim wallet actions
     if (data.startsWith('withdraw_claim_')) {
         const username = data.replace('withdraw_claim_', '');
-        const wallet = await ClaimWallet.findOne({ username: username });
+        const wallet = claimWallets.get(username);
         if (wallet) {
             const withdrawKeyboard = {
                 inline_keyboard: [
@@ -236,7 +150,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
     else if (data.startsWith('balance_claim_')) {
         const username = data.replace('balance_claim_', '');
-        const wallet = await ClaimWallet.findOne({ username: username });
+        const wallet = claimWallets.get(username);
         if (wallet) {
             const balance = await getWalletBalance(wallet.publicKey);
             const claimKeyboard = {
@@ -254,7 +168,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
     else if (data.startsWith('show_key_')) {
         const username = data.replace('show_key_', '');
-        const wallet = await ClaimWallet.findOne({ username: username });
+        const wallet = claimWallets.get(username);
         if (wallet) {
             const claimKeyboard = {
                 inline_keyboard: [
@@ -271,7 +185,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
     else if (data.startsWith('back_to_claim_')) {
         const username = data.replace('back_to_claim_', '');
-        const wallet = await ClaimWallet.findOne({ username: username });
+        const wallet = claimWallets.get(username);
         if (wallet) {
             const balance = await getWalletBalance(wallet.publicKey);
             const claimKeyboard = {
@@ -299,95 +213,65 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
             
             case 'create_wallet':
-                try {
-                    let existingWallet = await UserWallet.findOne({ userId: userId.toString() });
+                if (userWallets.has(userId.toString())) {
+                    const existingWallet = userWallets.get(userId.toString());
+                    const balance = await getWalletBalance(existingWallet.publicKey);
                     
-                    if (existingWallet) {
-                        const balance = await getWalletBalance(existingWallet.publicKey);
-                        
-                        const walletKeyboard = {
-                            inline_keyboard: [
-                                [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
-                                [{ text: "📊 Check Balance", callback_data: "check_balance" }],
-                                [{ text: "📥 Deposit", callback_data: "deposit" }],
-                                [{ text: "📤 Withdraw", callback_data: "withdraw" }]
-                            ]
-                        };
-                        
-                        await bot.sendMessage(chatId, `✅ *Your Wallet Details:*\n\nPublic Key: \`${existingWallet.publicKey}\`\nPrivate Key: \`${existingWallet.privateKey}\`\nCurrent Balance: *${balance} SOL*\n\nKeep your private key safe and never share it with anyone!`, {
-                            parse_mode: 'Markdown',
-                            reply_markup: walletKeyboard
-                        });
-                        return;
-                    }
+                    const walletKeyboard = {
+                        inline_keyboard: [
+                            [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
+                            [{ text: "📊 Check Balance", callback_data: "check_balance" }],
+                            [{ text: "📥 Deposit", callback_data: "deposit" }],
+                            [{ text: "📤 Withdraw", callback_data: "withdraw" }]
+                        ]
+                    };
                     
-                    console.log('Creating new wallet for user:', userId);
-                    const wallet = Keypair.generate();
-                    const privateKey = Buffer.from(wallet.secretKey).toString('hex');
-                    
-                    console.log('Generated wallet with public key:', wallet.publicKey.toString());
-                    
-                    // Save to MongoDB
-                    existingWallet = new UserWallet({
-                        userId: userId.toString(),
-                        privateKey: privateKey,
-                        publicKey: wallet.publicKey.toString()
+                    await bot.sendMessage(chatId, `✅ *Your Wallet Details:*\n\nPublic Key: \`${existingWallet.publicKey}\`\nPrivate Key: \`${existingWallet.privateKey}\`\nCurrent Balance: *${balance} SOL*\n\nKeep your private key safe and never share it with anyone!`, {
+                        parse_mode: 'Markdown',
+                        reply_markup: walletKeyboard
                     });
+                    return;
+                }
+                
+                const wallet = Keypair.generate();
+                const privateKey = Buffer.from(wallet.secretKey).toString('hex');
+                
+                userWallets.set(userId.toString(), {
+                    privateKey,
+                    publicKey: wallet.publicKey.toString()
+                });
+                
+                // Save wallets after creating new one
+                saveWallets();
+                
+                try {
+                    const signature = await connection.requestAirdrop(
+                        wallet.publicKey,
+                        LAMPORTS_PER_SOL
+                    );
+                    await connection.confirmTransaction(signature);
                     
-                    console.log('Attempting to save wallet to MongoDB...');
-                    await existingWallet.save();
-                    console.log('Wallet saved successfully');
+                    const walletKeyboard = {
+                        inline_keyboard: [
+                            [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
+                            [{ text: "📊 Check Balance", callback_data: "check_balance" }],
+                            [{ text: "📥 Deposit", callback_data: "deposit" }],
+                            [{ text: "📤 Withdraw", callback_data: "withdraw" }]
+                        ]
+                    };
                     
-                    try {
-                        console.log('Requesting airdrop...');
-                        const signature = await connection.requestAirdrop(
-                            wallet.publicKey,
-                            LAMPORTS_PER_SOL
-                        );
-                        console.log('Airdrop requested, signature:', signature);
-                        
-                        console.log('Confirming transaction...');
-                        await connection.confirmTransaction(signature);
-                        console.log('Transaction confirmed');
-                        
-                        const walletKeyboard = {
-                            inline_keyboard: [
-                                [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
-                                [{ text: "📊 Check Balance", callback_data: "check_balance" }],
-                                [{ text: "📥 Deposit", callback_data: "deposit" }],
-                                [{ text: "📤 Withdraw", callback_data: "withdraw" }]
-                            ]
-                        };
-                        
-                        await bot.sendMessage(chatId, `🎉 *Your wallet has been created and funded with 1 SOL on testnet!*\n\nPublic Key: \`${wallet.publicKey.toString()}\`\nPrivate Key: \`${privateKey}\`\n\nKeep your private key safe and never share it with anyone!`, {
-                            parse_mode: 'Markdown',
-                            reply_markup: walletKeyboard
-                        });
-                    } catch (error) {
-                        console.error('Airdrop error:', error);
-                        // Still send wallet details even if airdrop fails
-                        const walletKeyboard = {
-                            inline_keyboard: [
-                                [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
-                                [{ text: "📊 Check Balance", callback_data: "check_balance" }],
-                                [{ text: "📥 Deposit", callback_data: "deposit" }],
-                                [{ text: "📤 Withdraw", callback_data: "withdraw" }]
-                            ]
-                        };
-                        
-                        await bot.sendMessage(chatId, `🎉 *Your wallet has been created!*\n\nPublic Key: \`${wallet.publicKey.toString()}\`\nPrivate Key: \`${privateKey}\`\n\nNote: Airdrop request failed. You can still deposit SOL to your wallet.`, {
-                            parse_mode: 'Markdown',
-                            reply_markup: walletKeyboard
-                        });
-                    }
+                    await bot.sendMessage(chatId, `🎉 *Your wallet has been created and funded with 1 SOL on testnet!*\n\nPublic Key: \`${wallet.publicKey.toString()}\`\nPrivate Key: \`${privateKey}\`\n\nKeep your private key safe and never share it with anyone!`, {
+                        parse_mode: 'Markdown',
+                        reply_markup: walletKeyboard
+                    });
                 } catch (error) {
-                    console.error('Detailed error in create_wallet:', error);
-                    await bot.sendMessage(chatId, `❌ An error occurred while creating your wallet: ${error.message}\n\nPlease try again later or contact support if the issue persists.`);
+                    console.error('Airdrop error:', error);
+                    await bot.sendMessage(chatId, "Failed to get airdrop. Please try again later.");
                 }
                 break;
             
             case 'view_wallet':
-                const userWallet = await UserWallet.findOne({ userId: userId.toString() });
+                const userWallet = userWallets.get(userId.toString());
                 if (userWallet) {
                     const balance = await getWalletBalance(userWallet.publicKey);
                     const walletKeyboard = {
@@ -405,7 +289,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
             
             case 'check_balance':
-                const userWalletForBalance = await UserWallet.findOne({ userId: userId.toString() });
+                const userWalletForBalance = userWallets.get(userId.toString());
                 if (userWalletForBalance) {
                     const balance = await getWalletBalance(userWalletForBalance.publicKey);
                     const balanceKeyboard = {
@@ -423,7 +307,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
 
             case 'deposit':
-                const depositWallet = await UserWallet.findOne({ userId: userId.toString() });
+                const depositWallet = userWallets.get(userId.toString());
                 if (depositWallet) {
                     const depositKeyboard = {
                         inline_keyboard: [
@@ -438,7 +322,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 break;
 
             case 'withdraw':
-                const withdrawWallet = await UserWallet.findOne({ userId: userId.toString() });
+                const withdrawWallet = userWallets.get(userId.toString());
                 if (withdrawWallet) {
                     const withdrawKeyboard = {
                         inline_keyboard: [
@@ -471,7 +355,7 @@ bot.onText(/(?:@TestingBotAbhyudayBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, as
     }
 
     // Get sender's wallet
-    const senderWallet = await UserWallet.findOne({ userId: fromUserId.toString() });
+    const senderWallet = userWallets.get(fromUserId.toString());
     if (!senderWallet) {
         const keyboard = {
             inline_keyboard: [
@@ -495,17 +379,17 @@ bot.onText(/(?:@TestingBotAbhyudayBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, as
 
     // Create or get claim wallet for the target user
     let targetWallet;
-    const existingClaimWallet = await ClaimWallet.findOne({ username: targetUsername });
-    if (existingClaimWallet) {
-        targetWallet = existingClaimWallet;
+    if (claimWallets.has(targetUsername)) {
+        targetWallet = claimWallets.get(targetUsername);
     } else {
         const newWallet = Keypair.generate();
-        targetWallet = new ClaimWallet({
-            username: targetUsername,
+        targetWallet = {
             privateKey: Buffer.from(newWallet.secretKey).toString('hex'),
-            publicKey: newWallet.publicKey.toString()
-        });
-        await targetWallet.save();
+            publicKey: newWallet.publicKey.toString(),
+            fromUserId: fromUserId.toString(),
+            amount: amount
+        };
+        claimWallets.set(targetUsername, targetWallet);
     }
 
     try {
@@ -563,7 +447,7 @@ bot.onText(/\/claim/, async (msg) => {
         return;
     }
     
-    const wallet = await ClaimWallet.findOne({ username: username });
+    const wallet = claimWallets.get(username);
     
     if (!wallet) {
         await bot.sendMessage(chatId, `❌ No tips found for @${username}. Make sure the username matches exactly (case-insensitive).`);
@@ -605,7 +489,7 @@ bot.onText(/withdraw (.+) (.+)/, async (msg, match) => {
         return;
     }
 
-    const wallet = await UserWallet.findOne({ userId: userId.toString() });
+    const wallet = userWallets.get(userId.toString());
     if (!wallet) {
         const keyboard = {
             inline_keyboard: [
@@ -676,7 +560,7 @@ bot.onText(/\/balance/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     
-    const wallet = await UserWallet.findOne({ userId: userId.toString() });
+    const wallet = userWallets.get(userId.toString());
     if (!wallet) {
         const keyboard = {
             inline_keyboard: [
@@ -715,7 +599,7 @@ bot.onText(/withdraw_claim (.+) (.+) (.+)/, async (msg, match) => {
         return;
     }
 
-    const wallet = await ClaimWallet.findOne({ username: username });
+    const wallet = claimWallets.get(username);
     if (!wallet) {
         await bot.sendMessage(chatId, '❌ Claim wallet not found.');
         return;
@@ -763,8 +647,7 @@ bot.onText(/withdraw_claim (.+) (.+) (.+)/, async (msg, match) => {
     }
 });
 
-// Add startup confirmation
-console.log('Bot setup complete. Ready to receive messages!');
-
-// Export bot instance for potential testing
-module.exports = bot; 
+// Error handling
+bot.on('polling_error', (error) => {
+    console.log(error);
+}); 
