@@ -1,4 +1,5 @@
-require('dotenv').config();
+// Remove dotenv config since we're using hardcoded values
+// require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { 
     Keypair, 
@@ -8,190 +9,102 @@ const {
     SystemProgram, 
     LAMPORTS_PER_SOL 
 } = require('@solana/web3.js');
-const { MongoClient } = require('mongodb');
+const { Pool } = require('pg');
 
-// Initialize bot with your token
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+// Initialize bot with hardcoded token
+const bot = new TelegramBot('7721938745:AAHGaWGqJlCcHbmiKlapve8cox3gFVVqzyE', { polling: true });
 
 // Connect to Solana testnet
 const connection = new Connection('https://api.testnet.solana.com', 'confirmed');
 
-// MongoDB connection
-const MONGODB_URI = 'mongodb+srv://singhsunita2772:Abhy%402004@cluster0.3qwp7fg.mongodb.net/solana_tip_bot?retryWrites=true&w=majority';
-const client = new MongoClient(MONGODB_URI, {
-    ssl: true,
-    tls: true,
-    tlsInsecure: true,
-    serverSelectionTimeoutMS: 5000,
-    connectTimeoutMS: 10000,
-    socketTimeoutMS: 45000,
-    family: 4,
-    maxPoolSize: 10,
-    minPoolSize: 5,
-    maxIdleTimeMS: 30000,
-    retryWrites: true,
-    w: 'majority',
-    retryReads: true
+// Initialize PostgreSQL connection with hardcoded URL
+const pool = new Pool({
+    connectionString: 'postgresql://postgres:zAGFInFgEecNytNOuHXrxoVcDZyWxaQc@postgres.railway.internal:5432/railway',
+    ssl: {
+        rejectUnauthorized: false
+    }
 });
-let db;
-let isConnecting = false;
-let connectionRetries = 0;
-const MAX_RETRIES = 5;
 
-// Initialize Maps for storing wallets
+// Initialize maps for in-memory caching
 let userWallets = new Map();
 let claimWallets = new Map();
 
-// Initialize MongoDB connection
-async function initializeMongoDB() {
-    if (isConnecting) {
-        console.log('MongoDB connection already in progress...');
-        return;
-    }
-
-    if (connectionRetries >= MAX_RETRIES) {
-        console.error('Max MongoDB connection retries reached');
-        return;
-    }
-
-    isConnecting = true;
-    connectionRetries++;
-
+// Create tables if they don't exist
+async function initializeDatabase() {
     try {
-        await client.connect();
-        console.log('Connected to MongoDB successfully');
-        db = client.db('solana_tip_bot');
-        connectionRetries = 0; // Reset retry counter on successful connection
-        
-        // Load existing wallets from MongoDB
-        await loadWalletsFromMongoDB();
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS user_wallets (
+                user_id TEXT PRIMARY KEY,
+                private_key TEXT NOT NULL,
+                public_key TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            
+            CREATE TABLE IF NOT EXISTS claim_wallets (
+                username TEXT PRIMARY KEY,
+                private_key TEXT NOT NULL,
+                public_key TEXT NOT NULL,
+                from_user_id TEXT,
+                amount DECIMAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        console.log('Database initialized successfully');
     } catch (error) {
-        console.error('MongoDB connection error:', error);
-        isConnecting = false;
-        
-        // Wait before retrying
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        return initializeMongoDB();
-    } finally {
-        isConnecting = false;
+        console.error('Error initializing database:', error);
     }
 }
 
-// Load wallets from MongoDB
-async function loadWalletsFromMongoDB() {
+// Load wallets from database
+async function loadWallets() {
     try {
         // Load user wallets
-        const userWalletsCollection = db.collection('user_wallets');
-        const userWalletsData = await userWalletsCollection.find({}).toArray();
-        userWalletsData.forEach(wallet => {
-            userWallets.set(wallet.userId, {
-                publicKey: wallet.publicKey,
-                privateKey: wallet.privateKey
+        const userWalletsResult = await pool.query('SELECT * FROM user_wallets');
+        userWalletsResult.rows.forEach(row => {
+            userWallets.set(row.user_id, {
+                privateKey: row.private_key,
+                publicKey: row.public_key
             });
         });
-        console.log(`Loaded ${userWalletsData.length} user wallets from MongoDB`);
 
         // Load claim wallets
-        const claimWalletsCollection = db.collection('claim_wallets');
-        const claimWalletsData = await claimWalletsCollection.find({}).toArray();
-        claimWalletsData.forEach(wallet => {
-            claimWallets.set(wallet.username, {
-                publicKey: wallet.publicKey,
-                privateKey: wallet.privateKey,
-                fromUserId: wallet.fromUserId,
-                amount: wallet.amount
+        const claimWalletsResult = await pool.query('SELECT * FROM claim_wallets');
+        claimWalletsResult.rows.forEach(row => {
+            claimWallets.set(row.username, {
+                privateKey: row.private_key,
+                publicKey: row.public_key,
+                fromUserId: row.from_user_id,
+                amount: row.amount
             });
         });
-        console.log(`Loaded ${claimWalletsData.length} claim wallets from MongoDB`);
+        console.log('Wallets loaded successfully from database');
     } catch (error) {
-        console.error('Error loading wallets from MongoDB:', error);
+        console.error('Error loading wallets:', error);
     }
 }
 
-// Initialize MongoDB on startup
-initializeMongoDB().catch(console.error);
-
-// Add error handling for MongoDB operations
-async function safeMongoOperation(operation) {
-    if (!db) {
-        try {
-            await initializeMongoDB();
-            if (!db) {
-                console.error('Failed to initialize MongoDB after retry');
-                return null;
-            }
-        } catch (error) {
-            console.error('Failed to initialize MongoDB:', error);
-            return null;
-        }
-    }
-
+// Save wallet to database
+async function saveWallet(userId, wallet, isClaimWallet = false) {
     try {
-        return await operation();
-    } catch (error) {
-        if (error.name === 'MongoServerSelectionError' || error.name === 'MongoNetworkError') {
-            console.error('MongoDB connection error during operation:', error);
-            // Try to reconnect
-            await initializeMongoDB();
-            if (db) {
-                return await operation();
-            }
+        if (isClaimWallet) {
+            await pool.query(
+                'INSERT INTO claim_wallets (username, private_key, public_key, from_user_id, amount) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (username) DO UPDATE SET private_key = $2, public_key = $3, from_user_id = $4, amount = $5',
+                [userId, wallet.privateKey, wallet.publicKey, wallet.fromUserId, wallet.amount]
+            );
+        } else {
+            await pool.query(
+                'INSERT INTO user_wallets (user_id, private_key, public_key) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO UPDATE SET private_key = $2, public_key = $3',
+                [userId, wallet.privateKey, wallet.publicKey]
+            );
         }
-        throw error;
+    } catch (error) {
+        console.error('Error saving wallet:', error);
     }
 }
 
-// Update the saveWallets function to use safeMongoOperation
-async function saveWallets() {
-    return safeMongoOperation(async () => {
-        if (!db) {
-            console.error('Database not initialized');
-            return;
-        }
-        
-        try {
-            const userWalletsCollection = db.collection('user_wallets');
-            const claimWalletsCollection = db.collection('claim_wallets');
-
-            // Convert Maps to arrays of documents
-            const userWalletsArray = Array.from(userWallets.entries()).map(([userId, wallet]) => ({
-                userId,
-                ...wallet
-            }));
-
-            const claimWalletsArray = Array.from(claimWallets.entries()).map(([username, wallet]) => ({
-                username,
-                ...wallet
-            }));
-
-            // Clear existing data
-            await userWalletsCollection.deleteMany({});
-            await claimWalletsCollection.deleteMany({});
-
-            // Insert new data
-            if (userWalletsArray.length > 0) {
-                await userWalletsCollection.insertMany(userWalletsArray);
-            }
-            if (claimWalletsArray.length > 0) {
-                await claimWalletsCollection.insertMany(claimWalletsArray);
-            }
-
-            console.log('Wallets saved to MongoDB successfully');
-        } catch (error) {
-            console.error('Error saving wallets to MongoDB:', error);
-            throw error;
-        }
-    });
-}
-
-// Save wallets periodically (every 5 minutes)
-setInterval(saveWallets, 5 * 60 * 1000);
-
-// Save wallets before process exit
-process.on('SIGINT', async () => {
-    await saveWallets();
-    await client.close();
-    process.exit();
+// Initialize database and load wallets on startup
+initializeDatabase().then(() => {
+    loadWallets();
 });
 
 // Function to get wallet balance
@@ -367,24 +280,15 @@ bot.on('callback_query', async (callbackQuery) => {
                 const wallet = Keypair.generate();
                 const privateKey = Buffer.from(wallet.secretKey).toString('hex');
                 
-                const newWallet = {
+                userWallets.set(userId.toString(), {
                     privateKey,
                     publicKey: wallet.publicKey.toString()
-                };
+                });
                 
-                userWallets.set(userId.toString(), newWallet);
-                
-                // Save to MongoDB immediately using safeMongoOperation
-                await safeMongoOperation(async () => {
-                    try {
-                        await db.collection('user_wallets').insertOne({
-                            userId: userId.toString(),
-                            ...newWallet
-                        });
-                        console.log('New wallet saved to MongoDB');
-                    } catch (error) {
-                        console.error('Error saving new wallet to MongoDB:', error);
-                    }
+                // Save wallets after creating new one
+                await saveWallet(userId.toString(), {
+                    privateKey,
+                    publicKey: wallet.publicKey.toString()
                 });
                 
                 try {
@@ -409,7 +313,7 @@ bot.on('callback_query', async (callbackQuery) => {
                     });
                 } catch (error) {
                     console.error('Airdrop error:', error);
-                    await bot.sendMessage(chatId, "Failed to get airdrop. Please try again later or visit https://faucet.solana.com to get test SOL.");
+                    await bot.sendMessage(chatId, "Failed to get airdrop. Please try again later.");
                 }
                 break;
             
@@ -533,19 +437,6 @@ bot.onText(/(?:@TestingBotAbhyudayBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, as
             amount: amount
         };
         claimWallets.set(targetUsername, targetWallet);
-        
-        // Save new claim wallet to MongoDB using safeMongoOperation
-        await safeMongoOperation(async () => {
-            try {
-                await db.collection('claim_wallets').insertOne({
-                    username: targetUsername,
-                    ...targetWallet
-                });
-                console.log('New claim wallet saved to MongoDB');
-            } catch (error) {
-                console.error('Error saving new claim wallet to MongoDB:', error);
-            }
-        });
     }
 
     try {
