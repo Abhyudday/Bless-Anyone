@@ -8,7 +8,7 @@ const {
     SystemProgram, 
     LAMPORTS_PER_SOL 
 } = require('@solana/web3.js');
-const fs = require('fs');
+const { MongoClient } = require('mongodb');
 
 // Initialize bot with your token
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
@@ -16,38 +16,86 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 // Connect to Solana testnet
 const connection = new Connection('https://api.testnet.solana.com', 'confirmed');
 
-// File paths for wallet storage
-const WALLET_STORAGE_FILE = 'wallets.json';
+// MongoDB connection
+const MONGODB_URI = 'mongodb+srv://singhsunita2772:Abhy@2004@cluster0.3qwp7fg.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0s';
+const client = new MongoClient(MONGODB_URI);
+let db;
 
-// Load wallets from file or initialize empty maps
-let userWallets = new Map();
-let claimWallets = new Map();
-
-// Load existing wallets from file
-function loadWallets() {
+// Initialize MongoDB connection
+async function initMongoDB() {
     try {
-        if (fs.existsSync(WALLET_STORAGE_FILE)) {
-            const data = JSON.parse(fs.readFileSync(WALLET_STORAGE_FILE, 'utf8'));
-            userWallets = new Map(Object.entries(data.userWallets));
-            claimWallets = new Map(Object.entries(data.claimWallets));
-            console.log('Wallets loaded successfully');
-        }
+        await client.connect();
+        db = client.db('solana_tip_bot');
+        console.log('Connected to MongoDB');
     } catch (error) {
-        console.error('Error loading wallets:', error);
+        console.error('MongoDB connection error:', error);
+        process.exit(1);
     }
 }
 
-// Save wallets to file
-function saveWallets() {
+// Initialize MongoDB on startup
+initMongoDB();
+
+// Save wallets to MongoDB
+async function saveWallets() {
     try {
-        const data = {
-            userWallets: Object.fromEntries(userWallets),
-            claimWallets: Object.fromEntries(claimWallets)
-        };
-        fs.writeFileSync(WALLET_STORAGE_FILE, JSON.stringify(data, null, 2));
-        console.log('Wallets saved successfully');
+        const userWalletsCollection = db.collection('user_wallets');
+        const claimWalletsCollection = db.collection('claim_wallets');
+
+        // Convert Maps to arrays of documents
+        const userWalletsArray = Array.from(userWallets.entries()).map(([userId, wallet]) => ({
+            userId,
+            ...wallet
+        }));
+
+        const claimWalletsArray = Array.from(claimWallets.entries()).map(([username, wallet]) => ({
+            username,
+            ...wallet
+        }));
+
+        // Clear existing data
+        await userWalletsCollection.deleteMany({});
+        await claimWalletsCollection.deleteMany({});
+
+        // Insert new data
+        if (userWalletsArray.length > 0) {
+            await userWalletsCollection.insertMany(userWalletsArray);
+        }
+        if (claimWalletsArray.length > 0) {
+            await claimWalletsCollection.insertMany(claimWalletsArray);
+        }
+
+        console.log('Wallets saved to MongoDB successfully');
     } catch (error) {
-        console.error('Error saving wallets:', error);
+        console.error('Error saving wallets to MongoDB:', error);
+    }
+}
+
+// Load wallets from MongoDB
+async function loadWallets() {
+    try {
+        const userWalletsCollection = db.collection('user_wallets');
+        const claimWalletsCollection = db.collection('claim_wallets');
+
+        // Load user wallets
+        const userWalletsData = await userWalletsCollection.find({}).toArray();
+        userWallets = new Map(userWalletsData.map(doc => [doc.userId, {
+            privateKey: doc.privateKey,
+            publicKey: doc.publicKey
+        }]));
+
+        // Load claim wallets
+        const claimWalletsData = await claimWalletsCollection.find({}).toArray();
+        claimWallets = new Map(claimWalletsData.map(doc => [doc.username, {
+            privateKey: doc.privateKey,
+            publicKey: doc.publicKey,
+            fromUserId: doc.fromUserId,
+            amount: doc.amount
+        }]));
+
+        console.log('Wallets loaded from MongoDB successfully');
+    } catch (error) {
+        console.error('Error loading wallets from MongoDB:', error);
     }
 }
 
@@ -58,8 +106,9 @@ loadWallets();
 setInterval(saveWallets, 5 * 60 * 1000);
 
 // Save wallets before process exit
-process.on('SIGINT', () => {
-    saveWallets();
+process.on('SIGINT', async () => {
+    await saveWallets();
+    await client.close();
     process.exit();
 });
 

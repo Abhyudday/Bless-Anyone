@@ -5,11 +5,6 @@ package-lock.json
 # Environment variables
 .env
 
-# Wallet data
-wallets.json
-claim_wallets.json
-user_wallets.json
-
 # Logs
 *.log
 

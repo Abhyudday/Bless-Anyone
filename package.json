@@ -1,9 +1,10 @@
 {
-  "name": "bless-anyone",
+  "name": "solana-tip-bot",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "A Telegram bot for sending and receiving SOL tips",
+  "main": "bot.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node bot.js"
   },
   "repository": {
     "type": "git",
@@ -16,11 +17,11 @@
     "url": "https://github.com/Abhyudday/Bless-Anyone/issues"
   },
   "homepage": "https://github.com/Abhyudday/Bless-Anyone#readme",
-  "description": "",
   "dependencies": {
-    "@solana/web3.js": "^1.98.2",
+    "@solana/web3.js": "^1.87.6",
     "dotenv": "^16.5.0",
+    "mongodb": "^6.3.0",
     "mongoose": "^8.14.2",
-    "node-telegram-bot-api": "^0.66.0"
+    "node-telegram-bot-api": "^0.64.0"
   }
 }
