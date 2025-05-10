@@ -1,4 +1,8 @@
-require('dotenv').config();
+// Remove dotenv config and add hardcoded variables
+// require('dotenv').config();
+const TELEGRAM_BOT_TOKEN = '7721938745:AAHGaWGqJlCcHbmiKlapve8cox3gFVVqzyE';
+const MONGODB_URI = 'mongodb+srv://singhsunita2772:Abhy@2004@cluster0.3qwp7fg.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0s';
+
 const TelegramBot = require('node-telegram-bot-api');
 const { 
     Keypair, 
@@ -11,7 +15,7 @@ const {
 const mongoose = require('mongoose');
 
 // Initialize bot with your token
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
 
 // Connect to Solana testnet
 const connection = new Connection('https://api.testnet.solana.com', 'confirmed');
@@ -49,7 +53,7 @@ const connectWithRetry = async () => {
     };
 
     try {
-        await mongoose.connect(process.env.MONGODB_URI, options);
+        await mongoose.connect(MONGODB_URI, options);
         console.log('Successfully connected to MongoDB');
     } catch (err) {
         console.error('MongoDB connection error:', err);
