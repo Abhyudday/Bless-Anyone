@@ -170,6 +170,9 @@ bot.onText(/\/start/, async (msg) => {
     });
 });
 
+// Store withdrawal state
+const withdrawalState = new Map();
+
 // Handle callback queries
 bot.on('callback_query', async (callbackQuery) => {
     const chatId = callbackQuery.message.chat.id;
@@ -181,16 +184,42 @@ bot.on('callback_query', async (callbackQuery) => {
         const username = data.replace('withdraw_claim_', '');
         const wallet = claimWallets.get(username);
         if (wallet) {
+            // Store the username in withdrawal state
+            withdrawalState.set(userId.toString(), {
+                username: username,
+                step: 'waiting_for_address'
+            });
+
             const withdrawKeyboard = {
                 inline_keyboard: [
-                    [{ text: "🔙 Back to Claim", callback_data: `back_to_claim_${username}` }]
+                    [{ text: "🔙 Cancel", callback_data: `cancel_withdraw_${username}` }]
                 ]
             };
-            await bot.sendMessage(chatId, `*Withdraw from your claim wallet:*\n\nPlease send a message in this format:\n\`withdraw_claim ${username} <destination_address> <amount>\`\n\nExample:\n\`withdraw_claim ${username} 7KqpRwzkkeweW5jQoETyLzhvs9rcCj9dVQ1MnzudirsM 0.5\``, {
+
+            await bot.sendMessage(chatId, 
+                `*Step 1: Enter Destination Wallet Address*\n\n` +
+                `Please send the Solana wallet address where you want to withdraw your funds.\n\n` +
+                `Example: \`7KqpRwzkkeweW5jQoETyLzhvs9rcCj9dVQ1MnzudirsM\``, {
                 parse_mode: 'Markdown',
                 reply_markup: withdrawKeyboard
             });
         }
+    }
+    else if (data.startsWith('cancel_withdraw_')) {
+        const username = data.replace('cancel_withdraw_', '');
+        withdrawalState.delete(userId.toString());
+        
+        const claimKeyboard = {
+            inline_keyboard: [
+                [{ text: "📤 Withdraw Funds", callback_data: `withdraw_claim_${username}` }],
+                [{ text: "📊 Check Balance", callback_data: `balance_claim_${username}` }],
+                [{ text: "🔑 Show Private Key", callback_data: `show_key_${username}` }]
+            ]
+        };
+
+        await bot.sendMessage(chatId, "Withdrawal cancelled.", {
+            reply_markup: claimKeyboard
+        });
     }
     else if (data.startsWith('balance_claim_')) {
         const username = data.replace('balance_claim_', '');
@@ -524,69 +553,103 @@ bot.onText(/\/claim/, async (msg) => {
     });
 });
 
-// Handle withdraw command
-bot.onText(/withdraw (.+) (.+)/, async (msg, match) => {
+// Handle withdrawal messages
+bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
-    const destinationAddress = match[1];
-    const amount = parseFloat(match[2]);
+    const text = msg.text;
 
-    if (isNaN(amount) || amount <= 0) {
-        await bot.sendMessage(chatId, '❌ Please provide a valid amount greater than 0.');
-        return;
-    }
-
-    const wallet = userWallets.get(userId.toString());
-    if (!wallet) {
-        const keyboard = {
-            inline_keyboard: [
-                [{ text: "💳 Create Wallet", callback_data: "create_wallet" }]
-            ]
-        };
-        await bot.sendMessage(chatId, '❌ Please create a wallet first!', {
-            reply_markup: keyboard
-        });
-        return;
-    }
-
-    try {
-        const balance = await getWalletBalance(wallet.publicKey);
-        if (balance < amount) {
-            await bot.sendMessage(chatId, `❌ Insufficient balance. Your current balance is *${balance} SOL*`, {
-                parse_mode: 'Markdown'
-            });
+    // Check if user is in withdrawal process
+    const withdrawal = withdrawalState.get(userId.toString());
+    if (withdrawal) {
+        const wallet = claimWallets.get(withdrawal.username);
+        if (!wallet) {
+            withdrawalState.delete(userId.toString());
+            await bot.sendMessage(chatId, "❌ Error: Claim wallet not found.");
             return;
         }
 
-        const senderKeypair = createWalletFromPrivateKey(wallet.privateKey);
-        const transaction = new Transaction().add(
-            SystemProgram.transfer({
-                fromPubkey: senderKeypair.publicKey,
-                toPubkey: new PublicKey(destinationAddress),
-                lamports: amount * LAMPORTS_PER_SOL
-            })
-        );
+        if (withdrawal.step === 'waiting_for_address') {
+            // Validate Solana address
+            try {
+                new PublicKey(text);
+                
+                // Store address and move to next step
+                withdrawal.destinationAddress = text;
+                withdrawal.step = 'waiting_for_amount';
+                withdrawalState.set(userId.toString(), withdrawal);
 
-        const signature = await connection.sendTransaction(
-            transaction,
-            [senderKeypair]
-        );
-        await connection.confirmTransaction(signature);
+                const withdrawKeyboard = {
+                    inline_keyboard: [
+                        [{ text: "🔙 Cancel", callback_data: `cancel_withdraw_${withdrawal.username}` }]
+                    ]
+                };
 
-        const walletKeyboard = {
-            inline_keyboard: [
-                [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
-                [{ text: "📊 Check Balance", callback_data: "check_balance" }]
-            ]
-        };
+                await bot.sendMessage(chatId, 
+                    `*Step 2: Enter Amount*\n\n` +
+                    `Please enter the amount of SOL you want to withdraw.\n\n` +
+                    `Available balance: *${await getWalletBalance(wallet.publicKey)} SOL*\n\n` +
+                    `Example: \`0.5\``, {
+                    parse_mode: 'Markdown',
+                    reply_markup: withdrawKeyboard
+                });
+            } catch (error) {
+                await bot.sendMessage(chatId, "❌ Invalid Solana address. Please enter a valid address.");
+            }
+        }
+        else if (withdrawal.step === 'waiting_for_amount') {
+            const amount = parseFloat(text);
+            if (isNaN(amount) || amount <= 0) {
+                await bot.sendMessage(chatId, "❌ Please enter a valid amount greater than 0.");
+                return;
+            }
 
-        await bot.sendMessage(chatId, `✅ *Successfully withdrew ${amount} SOL!*\n\nTransaction signature: \`${signature}\``, {
-            parse_mode: 'Markdown',
-            reply_markup: walletKeyboard
-        });
-    } catch (error) {
-        console.error('Withdraw error:', error);
-        await bot.sendMessage(chatId, '❌ Failed to withdraw SOL. Please check the destination address and try again.');
+            const balance = await getWalletBalance(wallet.publicKey);
+            if (balance < amount) {
+                await bot.sendMessage(chatId, `❌ Insufficient balance. Your current balance is *${balance} SOL*`, {
+                    parse_mode: 'Markdown'
+                });
+                return;
+            }
+
+            try {
+                const senderKeypair = createWalletFromPrivateKey(wallet.privateKey);
+                const transaction = new Transaction().add(
+                    SystemProgram.transfer({
+                        fromPubkey: senderKeypair.publicKey,
+                        toPubkey: new PublicKey(withdrawal.destinationAddress),
+                        lamports: amount * LAMPORTS_PER_SOL
+                    })
+                );
+
+                const signature = await connection.sendTransaction(
+                    transaction,
+                    [senderKeypair]
+                );
+                await connection.confirmTransaction(signature);
+
+                const claimKeyboard = {
+                    inline_keyboard: [
+                        [{ text: "📤 Withdraw Again", callback_data: `withdraw_claim_${withdrawal.username}` }],
+                        [{ text: "📊 Check Balance", callback_data: `balance_claim_${withdrawal.username}` }],
+                        [{ text: "🔑 Show Private Key", callback_data: `show_key_${withdrawal.username}` }]
+                    ]
+                };
+
+                await bot.sendMessage(chatId, 
+                    `✅ *Successfully withdrew ${amount} SOL!*\n\n` +
+                    `Transaction signature: \`${signature}\``, {
+                    parse_mode: 'Markdown',
+                    reply_markup: claimKeyboard
+                });
+
+                // Clear withdrawal state
+                withdrawalState.delete(userId.toString());
+            } catch (error) {
+                console.error('Withdraw error:', error);
+                await bot.sendMessage(chatId, '❌ Failed to withdraw SOL. Please try again.');
+            }
+        }
     }
 });
 
