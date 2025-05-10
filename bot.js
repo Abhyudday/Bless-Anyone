@@ -14,8 +14,42 @@ const {
 } = require('@solana/web3.js');
 const mongoose = require('mongoose');
 
-// Initialize bot with your token
-const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
+// Add error handling for uncaught exceptions
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+});
+
+process.on('unhandledRejection', (error) => {
+    console.error('Unhandled Rejection:', error);
+});
+
+console.log('Starting bot initialization...');
+
+// Initialize bot with your token and polling options
+const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { 
+    polling: {
+        interval: 300,
+        autoStart: true,
+        params: {
+            timeout: 10
+        }
+    }
+});
+
+// Add bot event listeners for debugging
+bot.on('polling_error', (error) => {
+    console.error('Polling error:', error);
+});
+
+bot.on('webhook_error', (error) => {
+    console.error('Webhook error:', error);
+});
+
+bot.on('error', (error) => {
+    console.error('Bot error:', error);
+});
+
+console.log('Bot instance created, setting up event handlers...');
 
 // Connect to Solana testnet
 const connection = new Connection('https://api.testnet.solana.com', 'confirmed');
@@ -53,6 +87,7 @@ const connectWithRetry = async () => {
     };
 
     try {
+        console.log('Attempting to connect to MongoDB...');
         await mongoose.connect(MONGODB_URI, options);
         console.log('Successfully connected to MongoDB');
     } catch (err) {
@@ -77,6 +112,18 @@ mongoose.connection.on('disconnected', () => {
 
 mongoose.connection.on('reconnected', () => {
     console.log('MongoDB reconnected successfully');
+});
+
+// Add a test command to verify bot is working
+bot.onText(/\/test/, async (msg) => {
+    const chatId = msg.chat.id;
+    console.log('Received /test command from chat:', chatId);
+    try {
+        await bot.sendMessage(chatId, 'Bot is working! 🎉');
+        console.log('Test message sent successfully');
+    } catch (error) {
+        console.error('Error sending test message:', error);
+    }
 });
 
 // Function to get wallet balance
@@ -693,7 +740,8 @@ bot.onText(/withdraw_claim (.+) (.+) (.+)/, async (msg, match) => {
     }
 });
 
-// Error handling
-bot.on('polling_error', (error) => {
-    console.log(error);
-}); 
+// Add startup confirmation
+console.log('Bot setup complete. Ready to receive messages!');
+
+// Export bot instance for potential testing
+module.exports = bot; 
