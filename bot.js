@@ -211,8 +211,11 @@ bot.on('callback_query', async (callbackQuery) => {
                         return;
                     }
                     
+                    console.log('Creating new wallet for user:', userId);
                     const wallet = Keypair.generate();
                     const privateKey = Buffer.from(wallet.secretKey).toString('hex');
+                    
+                    console.log('Generated wallet with public key:', wallet.publicKey.toString());
                     
                     // Save to MongoDB
                     existingWallet = new UserWallet({
@@ -220,14 +223,22 @@ bot.on('callback_query', async (callbackQuery) => {
                         privateKey: privateKey,
                         publicKey: wallet.publicKey.toString()
                     });
+                    
+                    console.log('Attempting to save wallet to MongoDB...');
                     await existingWallet.save();
+                    console.log('Wallet saved successfully');
                     
                     try {
+                        console.log('Requesting airdrop...');
                         const signature = await connection.requestAirdrop(
                             wallet.publicKey,
                             LAMPORTS_PER_SOL
                         );
+                        console.log('Airdrop requested, signature:', signature);
+                        
+                        console.log('Confirming transaction...');
                         await connection.confirmTransaction(signature);
+                        console.log('Transaction confirmed');
                         
                         const walletKeyboard = {
                             inline_keyboard: [
@@ -244,11 +255,24 @@ bot.on('callback_query', async (callbackQuery) => {
                         });
                     } catch (error) {
                         console.error('Airdrop error:', error);
-                        await bot.sendMessage(chatId, "Failed to get airdrop. Please try again later.");
+                        // Still send wallet details even if airdrop fails
+                        const walletKeyboard = {
+                            inline_keyboard: [
+                                [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
+                                [{ text: "📊 Check Balance", callback_data: "check_balance" }],
+                                [{ text: "📥 Deposit", callback_data: "deposit" }],
+                                [{ text: "📤 Withdraw", callback_data: "withdraw" }]
+                            ]
+                        };
+                        
+                        await bot.sendMessage(chatId, `🎉 *Your wallet has been created!*\n\nPublic Key: \`${wallet.publicKey.toString()}\`\nPrivate Key: \`${privateKey}\`\n\nNote: Airdrop request failed. You can still deposit SOL to your wallet.`, {
+                            parse_mode: 'Markdown',
+                            reply_markup: walletKeyboard
+                        });
                     }
                 } catch (error) {
-                    console.error('Database error:', error);
-                    await bot.sendMessage(chatId, "An error occurred. Please try again later.");
+                    console.error('Detailed error in create_wallet:', error);
+                    await bot.sendMessage(chatId, `❌ An error occurred while creating your wallet: ${error.message}\n\nPlease try again later or contact support if the issue persists.`);
                 }
                 break;
             
