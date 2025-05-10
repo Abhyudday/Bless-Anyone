@@ -18,7 +18,14 @@ const connection = new Connection('https://api.testnet.solana.com', 'confirmed')
 
 // MongoDB connection
 const MONGODB_URI = 'mongodb+srv://singhsunita2772:Abhy%402004@cluster0.3qwp7fg.mongodb.net/solana_tip_bot?retryWrites=true&w=majority';
-const client = new MongoClient(MONGODB_URI);
+const client = new MongoClient(MONGODB_URI, {
+    ssl: true,
+    tls: true,
+    tlsAllowInvalidCertificates: true,
+    tlsAllowInvalidHostnames: true,
+    retryWrites: true,
+    w: 'majority'
+});
 let db;
 
 // Initialize Maps for storing wallets
@@ -36,7 +43,8 @@ async function initializeMongoDB() {
         await loadWalletsFromMongoDB();
     } catch (error) {
         console.error('MongoDB connection error:', error);
-        process.exit(1);
+        // Don't exit the process, just log the error and continue
+        // The bot will retry operations when needed
     }
 }
 
@@ -72,46 +80,61 @@ async function loadWalletsFromMongoDB() {
 }
 
 // Initialize MongoDB on startup
-initializeMongoDB();
+initializeMongoDB().catch(console.error);
 
-// Save wallets to MongoDB
-async function saveWallets() {
+// Add error handling for MongoDB operations
+async function safeMongoOperation(operation) {
     if (!db) {
-        console.error('Database not initialized');
-        return;
-    }
-    
-    try {
-        const userWalletsCollection = db.collection('user_wallets');
-        const claimWalletsCollection = db.collection('claim_wallets');
-
-        // Convert Maps to arrays of documents
-        const userWalletsArray = Array.from(userWallets.entries()).map(([userId, wallet]) => ({
-            userId,
-            ...wallet
-        }));
-
-        const claimWalletsArray = Array.from(claimWallets.entries()).map(([username, wallet]) => ({
-            username,
-            ...wallet
-        }));
-
-        // Clear existing data
-        await userWalletsCollection.deleteMany({});
-        await claimWalletsCollection.deleteMany({});
-
-        // Insert new data
-        if (userWalletsArray.length > 0) {
-            await userWalletsCollection.insertMany(userWalletsArray);
+        try {
+            await initializeMongoDB();
+        } catch (error) {
+            console.error('Failed to initialize MongoDB:', error);
+            return null;
         }
-        if (claimWalletsArray.length > 0) {
-            await claimWalletsCollection.insertMany(claimWalletsArray);
-        }
-
-        console.log('Wallets saved to MongoDB successfully');
-    } catch (error) {
-        console.error('Error saving wallets to MongoDB:', error);
     }
+    return operation();
+}
+
+// Update the saveWallets function to use safeMongoOperation
+async function saveWallets() {
+    await safeMongoOperation(async () => {
+        if (!db) {
+            console.error('Database not initialized');
+            return;
+        }
+        
+        try {
+            const userWalletsCollection = db.collection('user_wallets');
+            const claimWalletsCollection = db.collection('claim_wallets');
+
+            // Convert Maps to arrays of documents
+            const userWalletsArray = Array.from(userWallets.entries()).map(([userId, wallet]) => ({
+                userId,
+                ...wallet
+            }));
+
+            const claimWalletsArray = Array.from(claimWallets.entries()).map(([username, wallet]) => ({
+                username,
+                ...wallet
+            }));
+
+            // Clear existing data
+            await userWalletsCollection.deleteMany({});
+            await claimWalletsCollection.deleteMany({});
+
+            // Insert new data
+            if (userWalletsArray.length > 0) {
+                await userWalletsCollection.insertMany(userWalletsArray);
+            }
+            if (claimWalletsArray.length > 0) {
+                await claimWalletsCollection.insertMany(claimWalletsArray);
+            }
+
+            console.log('Wallets saved to MongoDB successfully');
+        } catch (error) {
+            console.error('Error saving wallets to MongoDB:', error);
+        }
+    });
 }
 
 // Save wallets periodically (every 5 minutes)
@@ -304,16 +327,18 @@ bot.on('callback_query', async (callbackQuery) => {
                 
                 userWallets.set(userId.toString(), newWallet);
                 
-                // Save to MongoDB immediately
-                try {
-                    await db.collection('user_wallets').insertOne({
-                        userId: userId.toString(),
-                        ...newWallet
-                    });
-                    console.log('New wallet saved to MongoDB');
-                } catch (error) {
-                    console.error('Error saving new wallet to MongoDB:', error);
-                }
+                // Save to MongoDB immediately using safeMongoOperation
+                await safeMongoOperation(async () => {
+                    try {
+                        await db.collection('user_wallets').insertOne({
+                            userId: userId.toString(),
+                            ...newWallet
+                        });
+                        console.log('New wallet saved to MongoDB');
+                    } catch (error) {
+                        console.error('Error saving new wallet to MongoDB:', error);
+                    }
+                });
                 
                 try {
                     const signature = await connection.requestAirdrop(
@@ -337,7 +362,7 @@ bot.on('callback_query', async (callbackQuery) => {
                     });
                 } catch (error) {
                     console.error('Airdrop error:', error);
-                    await bot.sendMessage(chatId, "Failed to get airdrop. Please try again later.");
+                    await bot.sendMessage(chatId, "Failed to get airdrop. Please try again later or visit https://faucet.solana.com to get test SOL.");
                 }
                 break;
             
@@ -462,16 +487,18 @@ bot.onText(/(?:@TestingBotAbhyudayBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, as
         };
         claimWallets.set(targetUsername, targetWallet);
         
-        // Save new claim wallet to MongoDB
-        try {
-            await db.collection('claim_wallets').insertOne({
-                username: targetUsername,
-                ...targetWallet
-            });
-            console.log('New claim wallet saved to MongoDB');
-        } catch (error) {
-            console.error('Error saving new claim wallet to MongoDB:', error);
-        }
+        // Save new claim wallet to MongoDB using safeMongoOperation
+        await safeMongoOperation(async () => {
+            try {
+                await db.collection('claim_wallets').insertOne({
+                    username: targetUsername,
+                    ...targetWallet
+                });
+                console.log('New claim wallet saved to MongoDB');
+            } catch (error) {
+                console.error('Error saving new claim wallet to MongoDB:', error);
+            }
+        });
     }
 
     try {
