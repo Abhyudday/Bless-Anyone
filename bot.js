@@ -21,12 +21,22 @@ const MONGODB_URI = 'mongodb+srv://singhsunita2772:Abhy%402004@cluster0.3qwp7fg.
 const client = new MongoClient(MONGODB_URI, {
     ssl: true,
     tls: true,
-    tlsAllowInvalidCertificates: true,
-    tlsAllowInvalidHostnames: true,
+    tlsInsecure: true,
+    directConnection: true,
+    serverSelectionTimeoutMS: 5000,
+    connectTimeoutMS: 10000,
+    socketTimeoutMS: 45000,
+    family: 4,
+    maxPoolSize: 10,
+    minPoolSize: 5,
+    maxIdleTimeMS: 30000,
     retryWrites: true,
     w: 'majority'
 });
 let db;
+let isConnecting = false;
+let connectionRetries = 0;
+const MAX_RETRIES = 5;
 
 // Initialize Maps for storing wallets
 let userWallets = new Map();
@@ -34,17 +44,36 @@ let claimWallets = new Map();
 
 // Initialize MongoDB connection
 async function initializeMongoDB() {
+    if (isConnecting) {
+        console.log('MongoDB connection already in progress...');
+        return;
+    }
+
+    if (connectionRetries >= MAX_RETRIES) {
+        console.error('Max MongoDB connection retries reached');
+        return;
+    }
+
+    isConnecting = true;
+    connectionRetries++;
+
     try {
         await client.connect();
-        console.log('Connected to MongoDB');
+        console.log('Connected to MongoDB successfully');
         db = client.db('solana_tip_bot');
+        connectionRetries = 0; // Reset retry counter on successful connection
         
         // Load existing wallets from MongoDB
         await loadWalletsFromMongoDB();
     } catch (error) {
         console.error('MongoDB connection error:', error);
-        // Don't exit the process, just log the error and continue
-        // The bot will retry operations when needed
+        isConnecting = false;
+        
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        return initializeMongoDB();
+    } finally {
+        isConnecting = false;
     }
 }
 
@@ -87,17 +116,34 @@ async function safeMongoOperation(operation) {
     if (!db) {
         try {
             await initializeMongoDB();
+            if (!db) {
+                console.error('Failed to initialize MongoDB after retry');
+                return null;
+            }
         } catch (error) {
             console.error('Failed to initialize MongoDB:', error);
             return null;
         }
     }
-    return operation();
+
+    try {
+        return await operation();
+    } catch (error) {
+        if (error.name === 'MongoServerSelectionError' || error.name === 'MongoNetworkError') {
+            console.error('MongoDB connection error during operation:', error);
+            // Try to reconnect
+            await initializeMongoDB();
+            if (db) {
+                return await operation();
+            }
+        }
+        throw error;
+    }
 }
 
 // Update the saveWallets function to use safeMongoOperation
 async function saveWallets() {
-    await safeMongoOperation(async () => {
+    return safeMongoOperation(async () => {
         if (!db) {
             console.error('Database not initialized');
             return;
@@ -133,6 +179,7 @@ async function saveWallets() {
             console.log('Wallets saved to MongoDB successfully');
         } catch (error) {
             console.error('Error saving wallets to MongoDB:', error);
+            throw error;
         }
     });
 }
