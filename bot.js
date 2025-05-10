@@ -21,34 +21,43 @@ const MONGODB_URI = 'mongodb+srv://singhsunita2772:Abhy%402004@cluster0.3qwp7fg.
 const client = new MongoClient(MONGODB_URI);
 let db;
 
+// Initialize Maps for storing wallets
+let userWallets = new Map();
+let claimWallets = new Map();
+
 // Initialize MongoDB connection
-async function initMongoDB() {
+async function initializeMongoDB() {
     try {
         await client.connect();
-        db = client.db('solana_tip_bot');
         console.log('Connected to MongoDB');
+        db = client.db('solana_tip_bot');
         
-        // Initialize collections if they don't exist
-        const collections = await db.listCollections().toArray();
-        const collectionNames = collections.map(col => col.name);
-        
-        if (!collectionNames.includes('user_wallets')) {
-            await db.createCollection('user_wallets');
-        }
-        if (!collectionNames.includes('claim_wallets')) {
-            await db.createCollection('claim_wallets');
-        }
-        
-        // Load wallets after successful connection
-        await loadWallets();
+        // Load existing wallets from MongoDB
+        await loadWalletsFromMongoDB();
     } catch (error) {
         console.error('MongoDB connection error:', error);
         process.exit(1);
     }
 }
 
+// Load wallets from MongoDB
+async function loadWalletsFromMongoDB() {
+    try {
+        const wallets = await db.collection('wallets').find({}).toArray();
+        wallets.forEach(wallet => {
+            userWallets.set(wallet.userId.toString(), {
+                publicKey: wallet.publicKey,
+                privateKey: wallet.privateKey
+            });
+        });
+        console.log(`Loaded ${wallets.length} wallets from MongoDB`);
+    } catch (error) {
+        console.error('Error loading wallets from MongoDB:', error);
+    }
+}
+
 // Initialize MongoDB on startup
-initMongoDB();
+initializeMongoDB();
 
 // Save wallets to MongoDB
 async function saveWallets() {
@@ -87,39 +96,6 @@ async function saveWallets() {
         console.log('Wallets saved to MongoDB successfully');
     } catch (error) {
         console.error('Error saving wallets to MongoDB:', error);
-    }
-}
-
-// Load wallets from MongoDB
-async function loadWallets() {
-    if (!db) {
-        console.error('Database not initialized');
-        return;
-    }
-    
-    try {
-        const userWalletsCollection = db.collection('user_wallets');
-        const claimWalletsCollection = db.collection('claim_wallets');
-
-        // Load user wallets
-        const userWalletsData = await userWalletsCollection.find({}).toArray();
-        userWallets = new Map(userWalletsData.map(doc => [doc.userId, {
-            privateKey: doc.privateKey,
-            publicKey: doc.publicKey
-        }]));
-
-        // Load claim wallets
-        const claimWalletsData = await claimWalletsCollection.find({}).toArray();
-        claimWallets = new Map(claimWalletsData.map(doc => [doc.username, {
-            privateKey: doc.privateKey,
-            publicKey: doc.publicKey,
-            fromUserId: doc.fromUserId,
-            amount: doc.amount
-        }]));
-
-        console.log('Wallets loaded from MongoDB successfully');
-    } catch (error) {
-        console.error('Error loading wallets from MongoDB:', error);
     }
 }
 
