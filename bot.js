@@ -22,7 +22,6 @@ const client = new MongoClient(MONGODB_URI, {
     ssl: true,
     tls: true,
     tlsInsecure: true,
-    directConnection: true,
     serverSelectionTimeoutMS: 5000,
     connectTimeoutMS: 10000,
     socketTimeoutMS: 45000,
@@ -31,7 +30,8 @@ const client = new MongoClient(MONGODB_URI, {
     minPoolSize: 5,
     maxIdleTimeMS: 30000,
     retryWrites: true,
-    w: 'majority'
+    w: 'majority',
+    retryReads: true
 });
 let db;
 let isConnecting = false;
