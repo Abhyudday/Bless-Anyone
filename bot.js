@@ -34,10 +34,46 @@ const claimWalletSchema = new mongoose.Schema({
 const UserWallet = mongoose.model('UserWallet', userWalletSchema);
 const ClaimWallet = mongoose.model('ClaimWallet', claimWalletSchema);
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI)
-    .then(() => console.log('Connected to MongoDB'))
-    .catch(err => console.error('MongoDB connection error:', err));
+// Connect to MongoDB with retry logic and better options
+const connectWithRetry = async () => {
+    const options = {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 45000,
+        connectTimeoutMS: 10000,
+        maxPoolSize: 10,
+        minPoolSize: 5,
+        retryWrites: true,
+        retryReads: true
+    };
+
+    try {
+        await mongoose.connect(process.env.MONGODB_URI, options);
+        console.log('Successfully connected to MongoDB');
+    } catch (err) {
+        console.error('MongoDB connection error:', err);
+        console.log('Retrying connection in 5 seconds...');
+        setTimeout(connectWithRetry, 5000);
+    }
+};
+
+// Initial connection attempt
+connectWithRetry();
+
+// Handle MongoDB connection events
+mongoose.connection.on('error', (err) => {
+    console.error('MongoDB connection error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+    console.log('MongoDB disconnected. Attempting to reconnect...');
+    connectWithRetry();
+});
+
+mongoose.connection.on('reconnected', () => {
+    console.log('MongoDB reconnected successfully');
+});
 
 // Function to get wallet balance
 async function getWalletBalance(publicKey) {
