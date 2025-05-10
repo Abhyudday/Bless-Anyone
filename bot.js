@@ -43,14 +43,29 @@ async function initializeMongoDB() {
 // Load wallets from MongoDB
 async function loadWalletsFromMongoDB() {
     try {
-        const wallets = await db.collection('wallets').find({}).toArray();
-        wallets.forEach(wallet => {
-            userWallets.set(wallet.userId.toString(), {
+        // Load user wallets
+        const userWalletsCollection = db.collection('user_wallets');
+        const userWalletsData = await userWalletsCollection.find({}).toArray();
+        userWalletsData.forEach(wallet => {
+            userWallets.set(wallet.userId, {
                 publicKey: wallet.publicKey,
                 privateKey: wallet.privateKey
             });
         });
-        console.log(`Loaded ${wallets.length} wallets from MongoDB`);
+        console.log(`Loaded ${userWalletsData.length} user wallets from MongoDB`);
+
+        // Load claim wallets
+        const claimWalletsCollection = db.collection('claim_wallets');
+        const claimWalletsData = await claimWalletsCollection.find({}).toArray();
+        claimWalletsData.forEach(wallet => {
+            claimWallets.set(wallet.username, {
+                publicKey: wallet.publicKey,
+                privateKey: wallet.privateKey,
+                fromUserId: wallet.fromUserId,
+                amount: wallet.amount
+            });
+        });
+        console.log(`Loaded ${claimWalletsData.length} claim wallets from MongoDB`);
     } catch (error) {
         console.error('Error loading wallets from MongoDB:', error);
     }
@@ -282,13 +297,23 @@ bot.on('callback_query', async (callbackQuery) => {
                 const wallet = Keypair.generate();
                 const privateKey = Buffer.from(wallet.secretKey).toString('hex');
                 
-                userWallets.set(userId.toString(), {
+                const newWallet = {
                     privateKey,
                     publicKey: wallet.publicKey.toString()
-                });
+                };
                 
-                // Save wallets after creating new one
-                saveWallets();
+                userWallets.set(userId.toString(), newWallet);
+                
+                // Save to MongoDB immediately
+                try {
+                    await db.collection('user_wallets').insertOne({
+                        userId: userId.toString(),
+                        ...newWallet
+                    });
+                    console.log('New wallet saved to MongoDB');
+                } catch (error) {
+                    console.error('Error saving new wallet to MongoDB:', error);
+                }
                 
                 try {
                     const signature = await connection.requestAirdrop(
@@ -436,6 +461,17 @@ bot.onText(/(?:@TestingBotAbhyudayBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, as
             amount: amount
         };
         claimWallets.set(targetUsername, targetWallet);
+        
+        // Save new claim wallet to MongoDB
+        try {
+            await db.collection('claim_wallets').insertOne({
+                username: targetUsername,
+                ...targetWallet
+            });
+            console.log('New claim wallet saved to MongoDB');
+        } catch (error) {
+            console.error('Error saving new claim wallet to MongoDB:', error);
+        }
     }
 
     try {
