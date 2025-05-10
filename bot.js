@@ -17,7 +17,7 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 const connection = new Connection('https://api.testnet.solana.com', 'confirmed');
 
 // MongoDB connection
-const MONGODB_URI = 'mongodb+srv://singhsunita2772:Abhy@2004@cluster0.3qwp7fg.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0s';
+const MONGODB_URI = 'mongodb+srv://singhsunita2772:Abhy@2004@cluster0.3qwp7fg.mongodb.net/solana_tip_bot?retryWrites=true&w=majority';
 const client = new MongoClient(MONGODB_URI);
 let db;
 
@@ -27,6 +27,20 @@ async function initMongoDB() {
         await client.connect();
         db = client.db('solana_tip_bot');
         console.log('Connected to MongoDB');
+        
+        // Initialize collections if they don't exist
+        const collections = await db.listCollections().toArray();
+        const collectionNames = collections.map(col => col.name);
+        
+        if (!collectionNames.includes('user_wallets')) {
+            await db.createCollection('user_wallets');
+        }
+        if (!collectionNames.includes('claim_wallets')) {
+            await db.createCollection('claim_wallets');
+        }
+        
+        // Load wallets after successful connection
+        await loadWallets();
     } catch (error) {
         console.error('MongoDB connection error:', error);
         process.exit(1);
@@ -38,6 +52,11 @@ initMongoDB();
 
 // Save wallets to MongoDB
 async function saveWallets() {
+    if (!db) {
+        console.error('Database not initialized');
+        return;
+    }
+    
     try {
         const userWalletsCollection = db.collection('user_wallets');
         const claimWalletsCollection = db.collection('claim_wallets');
@@ -73,6 +92,11 @@ async function saveWallets() {
 
 // Load wallets from MongoDB
 async function loadWallets() {
+    if (!db) {
+        console.error('Database not initialized');
+        return;
+    }
+    
     try {
         const userWalletsCollection = db.collection('user_wallets');
         const claimWalletsCollection = db.collection('claim_wallets');
@@ -98,9 +122,6 @@ async function loadWallets() {
         console.error('Error loading wallets from MongoDB:', error);
     }
 }
-
-// Load wallets on startup
-loadWallets();
 
 // Save wallets periodically (every 5 minutes)
 setInterval(saveWallets, 5 * 60 * 1000);
