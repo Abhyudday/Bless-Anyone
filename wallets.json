@@ -1,0 +1,20 @@
+{
+  "userWallets": {
+    "7031489189": {
+      "privateKey": "783eb0d5705d3fc94771c75b734a130b642ee36031cc4d09983dafeb6a9dab4e18dce99109e759c7ec52ec30139b62a548bb46e2f74a5224c5288a027ddc5700",
+      "publicKey": "2g4AKpJYvZHD9ih2cJQUqgZZYsvircoSXfH9k269WAuD"
+    },
+    "5950741458": {
+      "privateKey": "e32a502c1e0e2997dafbb52cf64925e03b54584f69a6d54be57e314dd56189af64801d5e8c6d767daecd6b9a99da4ea80a1c5387b7b413b18c0f70e5f0537e32",
+      "publicKey": "7mK5MbTmp2KT43fafx9JvRRjHSyXqC2oT7RQi5LMuQhf"
+    }
+  },
+  "claimWallets": {
+    "dsignrz": {
+      "privateKey": "a3584ce762e739d956f23fbfcf1b90c58b2b4c8ea3a237bfba3ee60a01419aaad1c8c54cab58a0b271c129553a36d840b16708c12aa3d9ac526824706bbebd60",
+      "publicKey": "F7umkBhxxUTbcUqBwBpAj2MboM5eBwjakjCVHaQDfc63",
+      "fromUserId": "5950741458",
+      "amount": 0.01
+    }
+  }
+}

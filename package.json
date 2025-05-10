@@ -1,0 +1,36 @@
+{
+  "name": "bless-anyone",
+  "version": "1.0.0",
+  "description": "A Telegram bot for sending and receiving SOL tips on Solana testnet",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "nodemon bot.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Abhyudday/Bless-Anyone.git"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "solana",
+    "crypto",
+    "tips"
+  ],
+  "author": "Abhyuday",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Abhyudday/Bless-Anyone/issues"
+  },
+  "homepage": "https://github.com/Abhyudday/Bless-Anyone#readme",
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "mongoose": "^7.5.0",
+    "node-telegram-bot-api": "^0.61.0",
+    "@solana/web3.js": "^1.78.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
