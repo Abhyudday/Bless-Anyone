@@ -17,7 +17,7 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 const connection = new Connection('https://api.testnet.solana.com', 'confirmed');
 
 // MongoDB connection
-const MONGODB_URI = 'mongodb+srv://singhsunita2772:Abhy@2004@cluster0.3qwp7fg.mongodb.net/solana_tip_bot?retryWrites=true&w=majority';
+const MONGODB_URI = 'mongodb+srv://singhsunita2772:Abhy%402004@cluster0.3qwp7fg.mongodb.net/solana_tip_bot?retryWrites=true&w=majority';
 const client = new MongoClient(MONGODB_URI);
 let db;
 
