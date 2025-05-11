@@ -121,6 +121,7 @@ const helpMessage = `*Solana Tip Bot Commands* 📚
 
 /start - Create your wallet
 /tip @username amount - Send SOL to someone
+/claim - View your wallet and available balance
 /balance - Check your wallet balance
 /network - Switch between Mainnet and Testnet
 /tutorial - Show the tutorial again
@@ -897,4 +898,51 @@ bot.onText(/\/kitne/, async (msg) => {
         console.error('Error counting users:', error);
         await bot.sendMessage(chatId, '❌ Error fetching user count.');
     }
+});
+
+// Handle claim command with improved UI
+bot.onText(/\/claim/, async (msg) => {
+    const chatId = msg.chat.id;
+    const username = msg.from.username ? msg.from.username.toLowerCase() : null;
+    
+    if (!username) {
+        await bot.sendMessage(chatId, '❌ Please set a username in your Telegram profile to use this bot.');
+        return;
+    }
+    
+    const wallet = userWallets.get(username);
+    
+    if (!wallet) {
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: "💳 Create Wallet", callback_data: "create_wallet" }]
+            ]
+        };
+        await bot.sendMessage(chatId, `❌ No wallet found for @${username}. Please create a wallet first.`, {
+            reply_markup: keyboard
+        });
+        return;
+    }
+
+    // Check wallet balance
+    const balance = await getWalletBalance(wallet.publicKey);
+    
+    const claimKeyboard = {
+        inline_keyboard: [
+            [{ text: "📤 Withdraw Funds", callback_data: `withdraw_claim_${username}` }],
+            [{ text: "📊 Check Balance", callback_data: `balance_claim_${username}` }],
+            [{ text: "🔑 Show Private Key", callback_data: `show_key_${username}` }]
+        ]
+    };
+    
+    await bot.sendMessage(chatId, 
+        `🎉 *Your Wallet Details*\n\n` +
+        `💰 Available Balance: *${balance} SOL*\n\n` +
+        `*What would you like to do?*\n\n` +
+        `📤 Withdraw - Send funds to another wallet\n` +
+        `📊 Check Balance - View your current balance\n` +
+        `🔑 Show Private Key - Get your wallet details`, {
+        parse_mode: 'Markdown',
+        reply_markup: claimKeyboard
+    });
 });
