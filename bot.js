@@ -441,7 +441,7 @@ bot.on('callback_query', async (callbackQuery) => {
                     const balance = await getWalletBalance(userWalletForBalance.publicKey);
                     const balanceKeyboard = {
                         inline_keyboard: [
-                            [{ text: "�� Show Private Key", callback_data: "show_private_key" }],
+                            [{ text: "🔑 Show Private Key", callback_data: "show_private_key" }],
                             [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
                             [{ text: "📥 Deposit", callback_data: "deposit" }],
                             [{ text: "📤 Withdraw", callback_data: "withdraw" }]
@@ -584,6 +584,16 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
     }
 
     try {
+        // Send processing message
+        const processingMsg = await bot.sendMessage(chatId, 
+            `⏳ *Processing Tip*\n\n` +
+            `💰 Amount: *${amount} SOL*\n` +
+            `💸 Fee: *${feeAmount} SOL* (10%)\n` +
+            `👤 To: @${targetUsername}\n\n` +
+            `Please wait while we process your transaction...`, {
+            parse_mode: 'Markdown'
+        });
+
         // Save the claim wallet to database
         await saveWallet(targetUsername, targetWallet, true);
         
@@ -622,12 +632,20 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
             [senderKeypair]
         );
         
-        // Wait for confirmation
-        const confirmation = await connection.confirmTransaction(signature);
-        
-        if (confirmation.value.err) {
+        // Wait for confirmation with timeout
+        const confirmation = await Promise.race([
+            connection.confirmTransaction(signature),
+            new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Transaction confirmation timeout')), 30000)
+            )
+        ]);
+
+        if (confirmation.value?.err) {
             throw new Error('Transaction failed to confirm');
         }
+
+        // Delete processing message
+        await bot.deleteMessage(chatId, processingMsg.message_id);
 
         // Create a nice message with buttons
         const tipKeyboard = {
@@ -640,7 +658,7 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
         await bot.sendMessage(chatId, 
             `🎉 *Tip Sent Successfully!*\n\n` +
             `💰 Amount: *${amount} SOL*\n` +
-            `�� Transaction Fee: *${feeAmount} SOL* (10%)\n` +
+            `💸 Transaction Fee: *${feeAmount} SOL* (10%)\n` +
             `🌐 Network Fee: *~0.000005 SOL*\n` +
             `👤 From: @${msg.from.username}\n` +
             `🎯 To: @${targetUsername}\n\n` +
@@ -655,6 +673,40 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
         });
     } catch (error) {
         console.error('Transfer error:', error);
+        // Check if the transaction was actually successful despite the error
+        try {
+            const status = await connection.getSignatureStatus(signature);
+            if (status?.value?.confirmationStatus === 'confirmed' || status?.value?.confirmationStatus === 'finalized') {
+                // Transaction was successful, send success message
+                const tipKeyboard = {
+                    inline_keyboard: [
+                        [{ text: "💳 Create Wallet", url: "https://t.me/TipSolanaBot?start=create" }],
+                        [{ text: "📝 How to Claim", url: "https://t.me/TipSolanaBot?start=help" }]
+                    ]
+                };
+
+                await bot.sendMessage(chatId, 
+                    `🎉 *Tip Sent Successfully!*\n\n` +
+                    `💰 Amount: *${amount} SOL*\n` +
+                    `💸 Transaction Fee: *${feeAmount} SOL* (10%)\n` +
+                    `🌐 Network Fee: *~0.000005 SOL*\n` +
+                    `👤 From: @${msg.from.username}\n` +
+                    `🎯 To: @${targetUsername}\n\n` +
+                    `@${targetUsername}, you've received a tip! 💝\n\n` +
+                    `To claim your tip:\n` +
+                    `1️⃣ Message @TipSolanaBot\n` +
+                    `2️⃣ Send /claim\n` +
+                    `3️⃣ Follow the instructions\n\n` +
+                    `Transaction: \`${signature}\``, {
+                    parse_mode: 'Markdown',
+                    reply_markup: tipKeyboard
+                });
+                return;
+            }
+        } catch (statusError) {
+            console.error('Error checking transaction status:', statusError);
+        }
+        
         await bot.sendMessage(chatId, '❌ Failed to send SOL. Please try again later.');
     }
 });
