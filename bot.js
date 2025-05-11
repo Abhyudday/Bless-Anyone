@@ -169,6 +169,11 @@ const helpMessage = `*Solana Tip Bot Commands* 📚
 • Keep your private keys safe
 • Ensure you have enough SOL for tip + fees`;
 
+// Add helper function for transaction links
+function getTransactionLink(signature) {
+    return `https://solscan.io/tx/${signature}`;
+}
+
 // Handle /start command
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
@@ -667,7 +672,8 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
             `1️⃣ Message @TipSolanaBot\n` +
             `2️⃣ Send /claim\n` +
             `3️⃣ Follow the instructions\n\n` +
-            `Transaction: \`${signature}\``, {
+            `Transaction: \`${signature}\`\n` +
+            `[View on Solscan](${getTransactionLink(signature)})`, {
             parse_mode: 'Markdown',
             reply_markup: tipKeyboard
         });
@@ -697,7 +703,8 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
                     `1️⃣ Message @TipSolanaBot\n` +
                     `2️⃣ Send /claim\n` +
                     `3️⃣ Follow the instructions\n\n` +
-                    `Transaction: \`${signature}\``, {
+                    `Transaction: \`${signature}\`\n` +
+                    `[View on Solscan](${getTransactionLink(signature)})`, {
                     parse_mode: 'Markdown',
                     reply_markup: tipKeyboard
                 });
@@ -811,6 +818,15 @@ bot.on('message', async (msg) => {
             }
 
             try {
+                // Send processing message
+                const processingMsg = await bot.sendMessage(chatId, 
+                    `⏳ *Processing Withdrawal*\n\n` +
+                    `💰 Amount: *${amount} SOL*\n` +
+                    `👤 To: \`${withdrawal.destinationAddress}\`\n\n` +
+                    `Please wait while we process your transaction...`, {
+                    parse_mode: 'Markdown'
+                });
+
                 const senderKeypair = createWalletFromPrivateKey(wallet.privateKey);
                 const transaction = new Transaction().add(
                     SystemProgram.transfer({
@@ -820,15 +836,35 @@ bot.on('message', async (msg) => {
                     })
                 );
 
+                // Get recent blockhash
+                const { blockhash } = await connection.getLatestBlockhash();
+                transaction.recentBlockhash = blockhash;
+                transaction.feePayer = senderKeypair.publicKey;
+
                 const signature = await connection.sendTransaction(
                     transaction,
                     [senderKeypair]
                 );
-                await connection.confirmTransaction(signature);
+
+                // Wait for confirmation with timeout
+                const confirmation = await Promise.race([
+                    connection.confirmTransaction(signature),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Transaction confirmation timeout')), 30000)
+                    )
+                ]);
+
+                if (confirmation.value?.err) {
+                    throw new Error('Transaction failed to confirm');
+                }
+
+                // Delete processing message
+                await bot.deleteMessage(chatId, processingMsg.message_id);
 
                 const claimKeyboard = {
                     inline_keyboard: [
-                        [{ text: "📤 Withdraw Again", callback_data: `withdraw_claim_${withdrawal.username}` }]
+                        [{ text: "📤 Withdraw Again", callback_data: `withdraw_claim_${withdrawal.username}` }],
+                        [{ text: "🔍 View Transaction", url: getTransactionLink(signature) }]
                     ]
                 };
 
@@ -836,14 +872,53 @@ bot.on('message', async (msg) => {
                     `🎉 *Withdrawal Successful!*\n\n` +
                     `💰 Amount: *${amount} SOL*\n` +
                     `👤 From: @${msg.from.username}\n` +
-                    `🎯 To: @${withdrawal.username}\n\n` +
-                    `Transaction: \`${signature}\``, {
+                    `🎯 To: \`${withdrawal.destinationAddress}\`\n\n` +
+                    `Transaction: \`${signature}\`\n` +
+                    `[View on Solscan](${getTransactionLink(signature)})`, {
                     parse_mode: 'Markdown',
                     reply_markup: claimKeyboard
                 });
+
+                // Clear withdrawal state
+                withdrawalState.delete(userId.toString());
             } catch (error) {
                 console.error('Withdrawal error:', error);
-                await bot.sendMessage(chatId, '❌ Failed to withdraw funds. Please try again later.');
+                
+                // Check if the transaction was actually successful despite the error
+                try {
+                    const status = await connection.getSignatureStatus(signature);
+                    if (status?.value?.confirmationStatus === 'confirmed' || status?.value?.confirmationStatus === 'finalized') {
+                        // Transaction was successful, send success message
+                        const claimKeyboard = {
+                            inline_keyboard: [
+                                [{ text: "📤 Withdraw Again", callback_data: `withdraw_claim_${withdrawal.username}` }],
+                                [{ text: "🔍 View Transaction", url: getTransactionLink(signature) }]
+                            ]
+                        };
+
+                        await bot.sendMessage(chatId, 
+                            `🎉 *Withdrawal Successful!*\n\n` +
+                            `💰 Amount: *${amount} SOL*\n` +
+                            `👤 From: @${msg.from.username}\n` +
+                            `🎯 To: \`${withdrawal.destinationAddress}\`\n\n` +
+                            `Transaction: \`${signature}\`\n` +
+                            `[View on Solscan](${getTransactionLink(signature)})`, {
+                            parse_mode: 'Markdown',
+                            reply_markup: claimKeyboard
+                        });
+                        return;
+                    }
+                } catch (statusError) {
+                    console.error('Error checking transaction status:', statusError);
+                }
+
+                // If we get here, the transaction truly failed
+                await bot.sendMessage(chatId, 
+                    `❌ *Withdrawal Failed*\n\n` +
+                    `Error: ${error.message}\n\n` +
+                    `Please try again later.`, {
+                    parse_mode: 'Markdown'
+                });
             }
         }
     }
