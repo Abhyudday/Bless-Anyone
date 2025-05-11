@@ -1,44 +1,69 @@
-# Solana Wallet Telegram Bot
+# Solana Tip Bot
 
-This bot allows users to create Solana wallets and manage tips through Telegram.
+A Telegram bot that enables users to send and receive SOL tips on the Solana testnet. The bot creates and manages Solana wallets, handles tips, and includes a 10% fee system for the treasury.
 
 ## Features
 
-- Create a new Solana wallet with `/start`
-- Send tips to other users with `/tip <username> <amount>`
-- Claim received tips with `/claim`
+- Create and manage Solana wallets
+- Send tips to other users
+- Claim received tips
+- Check wallet balances
+- 10% fee system for treasury
+- Secure private key management
+- PostgreSQL database integration
 
-## Setup
+## Prerequisites
 
-1. Install dependencies:
+- Node.js (v14 or higher)
+- PostgreSQL database
+- Telegram Bot Token
+- Solana testnet connection
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd solana-tip-bot
+```
+
+2. Install dependencies:
 ```bash
 npm install
 ```
 
-2. Create a `.env` file in the root directory and add your Telegram bot token:
+3. Set up environment variables:
+Create a `.env` file with the following variables:
 ```
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+TELEGRAM_BOT_TOKEN=your_bot_token
+DATABASE_URL=your_postgresql_connection_string
 ```
 
-3. Start the bot:
+4. Start the bot:
 ```bash
 node bot.js
 ```
 
 ## Usage
 
-1. Start a chat with the bot and send `/start` to create your own Solana wallet
-2. To send a tip to another user, use `/tip <username> <amount>`
-3. Users can claim their tips by sending `/claim` to the bot
+1. Start the bot in Telegram: `/start`
+2. Create a wallet using the bot interface
+3. Send tips using: `/tip @username amount`
+4. Claim tips using: `/claim`
+5. Check balance using: `/balance`
 
-## Security Notes
+## Fee Structure
 
-- Private keys are stored in memory only and are cleared after claiming
-- Make sure to keep your private keys secure and never share them
-- The bot should be run in a secure environment
+- 10% of each tip goes to the treasury wallet
+- Example: When sending 1 SOL, recipient gets 0.9 SOL
+- Treasury wallet: `DB3NZgGPsANwp5RBBMEK2A9ehWeN41QCELRt8WYyL8d8`
 
-## Requirements
+## Security
 
-- Node.js
-- Telegram Bot Token (get it from @BotFather)
-- Internet connection 
+- Private keys are stored securely in the database
+- All transactions are performed on Solana testnet
+- Users are advised to never share their private keys
+
+## License
+
+MIT License 
