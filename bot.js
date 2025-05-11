@@ -799,3 +799,54 @@ bot.onText(/\/network/, async (msg) => {
         reply_markup: networkKeyboard
     });
 });
+
+// Handle tutorial command
+bot.onText(/\/tutorial/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    const currentNetwork = userNetworks.get(userId.toString()) || 'mainnet';
+    
+    const tutorialMessage = `🎉 *Welcome to Solana Tip Bot!* 🎉
+
+This bot helps you send and receive SOL tips on Solana.
+
+*Network:* ${currentNetwork.toUpperCase()}
+*Fee Structure:*
+• Transaction Fee: 0.01 SOL per tip
+• Network Fee: ~0.000005 SOL per transaction
+
+*How to use:*
+1️⃣ Create your wallet with /start
+2️⃣ Get your wallet address
+3️⃣ Send SOL to your wallet
+4️⃣ Use /tip @username amount to send tips
+5️⃣ Use /claim to claim received tips
+6️⃣ Use /network to switch between Mainnet and Testnet
+
+*Commands:*
+/start - Create your funding wallet
+/tip @username amount - Send SOL to someone
+/claim - Claim your received tips
+/help - Show this help message
+/balance - Check your wallet balance
+/network - Switch between Mainnet and Testnet
+
+*Tips:*
+• Always verify the username
+• Check your balance before sending
+• Keep your private keys safe
+• Ensure you have enough SOL for tip + fees`;
+
+    const tutorialKeyboard = {
+        inline_keyboard: [
+            [{ text: "💳 Create/View Wallet", callback_data: "create_wallet" }],
+            [{ text: "📝 Help", callback_data: "help" }]
+        ]
+    };
+    
+    await bot.sendMessage(chatId, tutorialMessage, { 
+        parse_mode: 'Markdown',
+        reply_markup: tutorialKeyboard
+    });
+});
