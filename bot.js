@@ -16,7 +16,7 @@ const { Pool } = require('pg');
 const bot = new TelegramBot('7909783368:AAGGmkndrpybLWUtdAvm91MVJG4Oz57vilA', { polling: true });
 
 // Connect to Solana mainnet
-const connection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
+let connection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
 
 // Initialize PostgreSQL connection with hardcoded URL
 const pool = new Pool({
@@ -35,6 +35,17 @@ const FEE_PERCENTAGE = 0.10; // 10% fee per transaction
 
 // Add network state tracking
 let userNetworks = new Map(); // Store user's preferred network
+
+// Function to update connection based on network
+function updateConnection(network) {
+    connection = new Connection(
+        network === 'mainnet' 
+            ? 'https://api.mainnet-beta.solana.com'
+            : 'https://api.testnet.solana.com',
+        'confirmed'
+    );
+    return connection;
+}
 
 // Create tables if they don't exist
 async function initializeDatabase() {
@@ -287,12 +298,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 userNetworks.set(userId.toString(), newNetwork);
                 
                 // Update connection based on network
-                const connection = new Connection(
-                    newNetwork === 'mainnet' 
-                        ? 'https://api.mainnet-beta.solana.com'
-                        : 'https://api.testnet.solana.com',
-                    'confirmed'
-                );
+                updateConnection(newNetwork);
                 
                 const networkKeyboard = {
                     inline_keyboard: [
@@ -843,7 +849,7 @@ bot.on('message', async (msg) => {
     }
 });
 
-// Add network toggle command
+// Update network toggle command
 bot.onText(/\/network/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -855,12 +861,7 @@ bot.onText(/\/network/, async (msg) => {
     userNetworks.set(userId.toString(), newNetwork);
     
     // Update connection based on network
-    const connection = new Connection(
-        newNetwork === 'mainnet' 
-            ? 'https://api.mainnet-beta.solana.com'
-            : 'https://api.testnet.solana.com',
-        'confirmed'
-    );
+    updateConnection(newNetwork);
     
     const networkKeyboard = {
         inline_keyboard: [
