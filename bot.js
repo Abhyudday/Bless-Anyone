@@ -305,6 +305,7 @@ bot.on('callback_query', async (callbackQuery) => {
                     
                     const walletKeyboard = {
                         inline_keyboard: [
+                            [{ text: "🔑 Show Private Key", callback_data: "show_private_key" }],
                             [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
                             [{ text: "📊 Check Balance", callback_data: "check_balance" }],
                             [{ text: "📥 Deposit", callback_data: "deposit" }],
@@ -315,10 +316,8 @@ bot.on('callback_query', async (callbackQuery) => {
                     await bot.sendMessage(chatId, 
                         `✅ *Your Wallet Details:*\n\n` +
                         `Public Key: \`${existingWallet.publicKey}\`\n\n` +
-                        `Private Key: ||${existingWallet.privateKey}||\n\n` +
                         `Current Balance: *${balance} SOL*\n\n` +
-                        `*Keep your private key safe and never share it with anyone!*\n\n` +
-                        `*Click on the blurred text above to reveal your private key.*`, {
+                        `*Click the button below to view your private key.*`, {
                         parse_mode: 'Markdown',
                         reply_markup: walletKeyboard
                     });
@@ -348,6 +347,7 @@ bot.on('callback_query', async (callbackQuery) => {
                     
                     const walletKeyboard = {
                         inline_keyboard: [
+                            [{ text: "🔑 Show Private Key", callback_data: "show_private_key" }],
                             [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
                             [{ text: "📊 Check Balance", callback_data: "check_balance" }],
                             [{ text: "📥 Deposit", callback_data: "deposit" }],
@@ -355,7 +355,10 @@ bot.on('callback_query', async (callbackQuery) => {
                         ]
                     };
                     
-                    await bot.sendMessage(chatId, `🎉 *Your wallet has been created and funded with 1 SOL on testnet!*\n\nPublic Key: \`${wallet.publicKey.toString()}\`\nPrivate Key: \`${privateKey}\`\n\nKeep your private key safe and never share it with anyone!`, {
+                    await bot.sendMessage(chatId, 
+                        `🎉 *Your wallet has been created and funded with 1 SOL on testnet!*\n\n` +
+                        `Public Key: \`${wallet.publicKey.toString()}\`\n\n` +
+                        `*Click the button below to view your private key.*`, {
                         parse_mode: 'Markdown',
                         reply_markup: walletKeyboard
                     });
@@ -433,6 +436,29 @@ bot.on('callback_query', async (callbackQuery) => {
                     await bot.sendMessage(chatId, `*Withdraw SOL from your wallet:*\n\nPlease send a message in this format:\n\`withdraw <destination_address> <amount>\`\n\nExample:\n\`withdraw 7KqpRwzkkeweW5jQoETyLzhvs9rcCj9dVQ1MnzudirsM 0.5\``, {
                         parse_mode: 'Markdown',
                         reply_markup: withdrawKeyboard
+                    });
+                }
+                break;
+
+            case 'show_private_key':
+                const userWalletForPrivateKey = userWallets.get(userId.toString());
+                if (userWalletForPrivateKey) {
+                    const balance = await getWalletBalance(userWalletForPrivateKey.publicKey);
+                    const walletKeyboard = {
+                        inline_keyboard: [
+                            [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
+                            [{ text: "📊 Check Balance", callback_data: "check_balance" }],
+                            [{ text: "📥 Deposit", callback_data: "deposit" }],
+                            [{ text: "📤 Withdraw", callback_data: "withdraw" }]
+                        ]
+                    };
+                    await bot.sendMessage(chatId, 
+                        `*Your Private Key:*\n\n` +
+                        `||${userWalletForPrivateKey.privateKey}||\n\n` +
+                        `⚠️ *Keep this private key safe and never share it with anyone!*\n\n` +
+                        `*Click on the blurred text above to reveal your private key.*`, {
+                        parse_mode: 'Markdown',
+                        reply_markup: walletKeyboard
                     });
                 }
                 break;
