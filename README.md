@@ -1,69 +1,44 @@
-# Solana Tip Bot
+# Solana Wallet Telegram Bot
 
-A Telegram bot that enables users to send and receive SOL tips on the Solana testnet. The bot creates and manages Solana wallets, handles tips, and includes a 10% fee system for the treasury.
+This bot allows users to create Solana wallets and manage tips through Telegram.
 
 ## Features
 
-- Create and manage Solana wallets
-- Send tips to other users
-- Claim received tips
-- Check wallet balances
-- 10% fee system for treasury
-- Secure private key management
-- PostgreSQL database integration
+- Create a new Solana wallet with `/start`
+- Send tips to other users with `/tip <username> <amount>`
+- Claim received tips with `/claim`
 
-## Prerequisites
+## Setup
 
-- Node.js (v14 or higher)
-- PostgreSQL database
-- Telegram Bot Token
-- Solana testnet connection
-
-## Installation
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd solana-tip-bot
-```
-
-2. Install dependencies:
+1. Install dependencies:
 ```bash
 npm install
 ```
 
-3. Set up environment variables:
-Create a `.env` file with the following variables:
+2. Create a `.env` file in the root directory and add your Telegram bot token:
 ```
-TELEGRAM_BOT_TOKEN=your_bot_token
-DATABASE_URL=your_postgresql_connection_string
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 ```
 
-4. Start the bot:
+3. Start the bot:
 ```bash
 node bot.js
 ```
 
 ## Usage
 
-1. Start the bot in Telegram: `/start`
-2. Create a wallet using the bot interface
-3. Send tips using: `/tip @username amount`
-4. Claim tips using: `/claim`
-5. Check balance using: `/balance`
+1. Start a chat with the bot and send `/start` to create your own Solana wallet
+2. To send a tip to another user, use `/tip <username> <amount>`
+3. Users can claim their tips by sending `/claim` to the bot
 
-## Fee Structure
+## Security Notes
 
-- 10% of each tip goes to the treasury wallet
-- Example: When sending 1 SOL, recipient gets 0.9 SOL
-- Treasury wallet: `DB3NZgGPsANwp5RBBMEK2A9ehWeN41QCELRt8WYyL8d8`
+- Private keys are stored in memory only and are cleared after claiming
+- Make sure to keep your private keys secure and never share them
+- The bot should be run in a secure environment
 
-## Security
+## Requirements
 
-- Private keys are stored securely in the database
-- All transactions are performed on Solana testnet
-- Users are advised to never share their private keys
-
-## License
-
-MIT License 
+- Node.js
+- Telegram Bot Token (get it from @BotFather)
+- Internet connection 
