@@ -16,7 +16,7 @@ const { Pool } = require('pg');
 const bot = new TelegramBot('7909783368:AAGGmkndrpybLWUtdAvm91MVJG4Oz57vilA', { polling: true });
 
 // Connect to Solana mainnet
-let connection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
+const connection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
 
 // Initialize PostgreSQL connection with hardcoded URL
 const pool = new Pool({
@@ -33,94 +33,11 @@ let userWallets = new Map();
 const FEES_WALLET = 'DB3NZgGPsANwp5RBBMEK2A9ehWeN41QCELRt8WYyL8d8';
 const FEE_PERCENTAGE = 0.10; // 10% fee per transaction
 
-// Add network state tracking
-let userNetworks = new Map(); // Store user's preferred network
-
-// Function to update connection based on network
-function updateConnection(network) {
-    connection = new Connection(
-        network === 'mainnet' 
-            ? 'https://api.mainnet-beta.solana.com'
-            : 'https://api.testnet.solana.com',
-        'confirmed'
-    );
-    return connection;
-}
-
-// Create tables if they don't exist
-async function initializeDatabase() {
-    try {
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS user_wallets (
-                user_id TEXT PRIMARY KEY,
-                private_key TEXT NOT NULL,
-                public_key TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
-        console.log('Database initialized successfully');
-    } catch (error) {
-        console.error('Error initializing database:', error);
-    }
-}
-
-// Load wallets from database
-async function loadWallets() {
-    try {
-        // Load user wallets
-        const userWalletsResult = await pool.query('SELECT * FROM user_wallets');
-        userWalletsResult.rows.forEach(row => {
-            userWallets.set(row.user_id, {
-                privateKey: row.private_key,
-                publicKey: row.public_key
-            });
-        });
-        console.log('Wallets loaded successfully from database');
-    } catch (error) {
-        console.error('Error loading wallets:', error);
-    }
-}
-
-// Save wallet to database
-async function saveWallet(userId, wallet) {
-    try {
-        await pool.query(
-            'INSERT INTO user_wallets (user_id, private_key, public_key) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO UPDATE SET private_key = $2, public_key = $3',
-            [userId, wallet.privateKey, wallet.publicKey]
-        );
-    } catch (error) {
-        console.error('Error saving wallet:', error);
-    }
-}
-
-// Initialize database and load wallets on startup
-initializeDatabase().then(() => {
-    loadWallets();
-});
-
-// Function to get wallet balance
-async function getWalletBalance(publicKey) {
-    try {
-        const balance = await connection.getBalance(new PublicKey(publicKey));
-        return balance / LAMPORTS_PER_SOL;
-    } catch (error) {
-        console.error('Error getting balance:', error);
-        return 0;
-    }
-}
-
-// Function to create wallet from private key
-function createWalletFromPrivateKey(privateKey) {
-    const secretKey = Buffer.from(privateKey, 'hex');
-    return Keypair.fromSecretKey(secretKey);
-}
-
 // Welcome message with tutorial
 const welcomeMessage = `🎉 *Welcome to Solana Tip Bot!* 🎉
 
 This bot helps you send and receive SOL tips on Solana.
 
-*Network:* Mainnet (default)
 *Fee Structure:*
 • Transaction Fee: 10% of tip amount
 • Network Fee: ~0.000005 SOL per transaction
@@ -134,7 +51,6 @@ const helpMessage = `*Solana Tip Bot Commands* 📚
 /tip @username amount - Send SOL to someone
 /claim - View your wallet and available balance
 /balance - Check your wallet balance
-/network - Switch between Mainnet and Testnet
 /tutorial - Show the tutorial again
 
 *Examples:*
@@ -151,11 +67,6 @@ const helpMessage = `*Solana Tip Bot Commands* 📚
 • Keep your private keys safe
 • Ensure you have enough SOL for tip + fees`;
 
-// Add helper function for transaction links
-function getTransactionLink(signature) {
-    return `https://solscan.io/tx/${signature}`;
-}
-
 // Handle /start command
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
@@ -164,7 +75,6 @@ bot.onText(/\/start/, async (msg) => {
     const keyboard = {
         inline_keyboard: [
             [{ text: "💰 Create/View Wallet", callback_data: "create_wallet" }],
-            [{ text: "🔄 Switch to Testnet", callback_data: "switch_network" }],
             [{ text: "❓ Help", callback_data: "help" }]
         ]
     };
@@ -290,36 +200,6 @@ bot.on('callback_query', async (callbackQuery) => {
     else {
         // Existing callback handlers
         switch (data) {
-            case 'switch_network':
-                const currentNetwork = userNetworks.get(userId.toString()) || 'mainnet';
-                const newNetwork = currentNetwork === 'mainnet' ? 'testnet' : 'mainnet';
-                
-                // Update user's network preference
-                userNetworks.set(userId.toString(), newNetwork);
-                
-                // Update connection based on network
-                updateConnection(newNetwork);
-                
-                const networkKeyboard = {
-                    inline_keyboard: [
-                        [{ text: "💰 Create/View Wallet", callback_data: "create_wallet" }],
-                        [{ text: newNetwork === 'mainnet' ? "🔄 Switch to Testnet" : "🔄 Switch to Mainnet", callback_data: "switch_network" }],
-                        [{ text: "❓ Help", callback_data: "help" }]
-                    ]
-                };
-                
-                await bot.sendMessage(chatId, 
-                    `🔄 *Network Switched Successfully!*\n\n` +
-                    `Current Network: *${newNetwork.toUpperCase()}*\n\n` +
-                    `*Fee Structure:*\n` +
-                    `• Transaction Fee: *0.01 SOL* per tip\n` +
-                    `• Network Fee: *~0.000005 SOL* per transaction\n\n` +
-                    `*Note:* Make sure you have enough SOL to cover both the tip amount and fees.`, {
-                    parse_mode: 'Markdown',
-                    reply_markup: networkKeyboard
-                });
-                break;
-            
             case 'help':
                 await bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
                 break;
@@ -847,39 +727,6 @@ bot.on('message', async (msg) => {
             }
         }
     }
-});
-
-// Update network toggle command
-bot.onText(/\/network/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    
-    const currentNetwork = userNetworks.get(userId.toString()) || 'mainnet';
-    const newNetwork = currentNetwork === 'mainnet' ? 'testnet' : 'mainnet';
-    
-    // Update user's network preference
-    userNetworks.set(userId.toString(), newNetwork);
-    
-    // Update connection based on network
-    updateConnection(newNetwork);
-    
-    const networkKeyboard = {
-        inline_keyboard: [
-            [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
-            [{ text: "📊 Check Balance", callback_data: "check_balance" }]
-        ]
-    };
-    
-    await bot.sendMessage(chatId, 
-        `🔄 *Network Switched Successfully!*\n\n` +
-        `Current Network: *${newNetwork.toUpperCase()}*\n\n` +
-        `*Fee Structure:*\n` +
-        `• Transaction Fee: *0.01 SOL* per tip\n` +
-        `• Network Fee: *~0.000005 SOL* per transaction\n\n` +
-        `*Note:* Make sure you have enough SOL to cover both the tip amount and fees.`, {
-        parse_mode: 'Markdown',
-        reply_markup: networkKeyboard
-    });
 });
 
 // Secret command to count total users
