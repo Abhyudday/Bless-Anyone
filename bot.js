@@ -15,8 +15,8 @@ const { Pool } = require('pg');
 // Initialize bot with hardcoded token
 const bot = new TelegramBot('7909783368:AAGGmkndrpybLWUtdAvm91MVJG4Oz57vilA', { polling: true });
 
-// Connect to Solana testnet
-const connection = new Connection('https://api.testnet.solana.com', 'confirmed');
+// Connect to Solana mainnet
+const connection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
 
 // Initialize PostgreSQL connection with hardcoded URL
 const pool = new Pool({
@@ -132,7 +132,7 @@ function createWalletFromPrivateKey(privateKey) {
 // Welcome message with tutorial
 const welcomeMessage = `🎉 *Welcome to Solana Tip Bot!* 🎉
 
-This bot helps you send and receive SOL tips on Solana testnet.
+This bot helps you send and receive SOL tips on Solana.
 
 Use the buttons below to get started!`;
 
@@ -153,8 +153,7 @@ const helpMessage = `*Solana Tip Bot Commands* 📚
 *Tips:*
 • Always verify the username
 • Check your balance before sending
-• Keep your private keys safe
-• Use testnet SOL only`;
+• Keep your private keys safe`;
 
 // Handle /start command
 bot.onText(/\/start/, async (msg) => {
@@ -356,7 +355,7 @@ bot.on('callback_query', async (callbackQuery) => {
                     };
                     
                     await bot.sendMessage(chatId, 
-                        `🎉 *Your wallet has been created and funded with 1 SOL on testnet!*\n\n` +
+                        `🎉 *Your wallet has been created!*\n\n` +
                         `Public Key: \`${wallet.publicKey.toString()}\`\n\n` +
                         `*Click the button below to view your private key.*`, {
                         parse_mode: 'Markdown',
@@ -426,7 +425,7 @@ bot.on('callback_query', async (callbackQuery) => {
                         `*Deposit SOL to your wallet:*\n\n` +
                         `Send SOL to this address:\n` +
                         `\`${depositWallet.publicKey}\`\n\n` +
-                        `*Note:* Make sure to send only SOL on testnet!`, {
+                        `*Note:* Make sure to send only SOL!`, {
                         parse_mode: 'Markdown',
                         reply_markup: depositKeyboard
                     });
@@ -727,134 +726,23 @@ bot.on('message', async (msg) => {
 
                 const claimKeyboard = {
                     inline_keyboard: [
-                        [{ text: "📤 Withdraw Again", callback_data: `withdraw_claim_${withdrawal.username}` }],
-                        [{ text: "📊 Check Balance", callback_data: `balance_claim_${withdrawal.username}` }],
-                        [{ text: "🔑 Show Private Key", callback_data: `show_key_${withdrawal.username}` }]
+                        [{ text: "📤 Withdraw Again", callback_data: `withdraw_claim_${withdrawal.username}` }]
                     ]
                 };
 
                 await bot.sendMessage(chatId, 
-                    `✅ *Successfully withdrew ${amount} SOL!*\n\n` +
-                    `Transaction signature: \`${signature}\``, {
+                    `🎉 *Withdrawal Successful!*\n\n` +
+                    `💰 Amount: *${amount} SOL*\n` +
+                    `👤 From: @${msg.from.username}\n` +
+                    `🎯 To: @${withdrawal.username}\n\n` +
+                    `Transaction: \`${signature}\``, {
                     parse_mode: 'Markdown',
                     reply_markup: claimKeyboard
                 });
-
-                // Clear withdrawal state
-                withdrawalState.delete(userId.toString());
             } catch (error) {
-                console.error('Withdraw error:', error);
-                await bot.sendMessage(chatId, '❌ Failed to withdraw SOL. Please try again.');
+                console.error('Withdrawal error:', error);
+                await bot.sendMessage(chatId, '❌ Failed to withdraw funds. Please try again later.');
             }
         }
     }
 });
-
-// Handle help command
-bot.onText(/\/help/, async (msg) => {
-    const chatId = msg.chat.id;
-    await bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
-});
-
-// Handle tutorial command
-bot.onText(/\/tutorial/, async (msg) => {
-    const chatId = msg.chat.id;
-    await bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
-});
-
-// Handle balance command
-bot.onText(/\/balance/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    
-    const wallet = userWallets.get(userId.toString());
-    if (!wallet) {
-        const keyboard = {
-            inline_keyboard: [
-                [{ text: "💳 Create Wallet", callback_data: "create_wallet" }]
-            ]
-        };
-        await bot.sendMessage(chatId, '❌ Please create a wallet first!', {
-            reply_markup: keyboard
-        });
-        return;
-    }
-    
-    const balance = await getWalletBalance(wallet.publicKey);
-    const balanceKeyboard = {
-        inline_keyboard: [
-            [{ text: "📥 Deposit", callback_data: "deposit" }],
-            [{ text: "📤 Withdraw", callback_data: "withdraw" }],
-            [{ text: "🔙 Back to Wallet", callback_data: "view_wallet" }]
-        ]
-    };
-    await bot.sendMessage(chatId, `*Your Current Balance:*\n\n*${balance} SOL*`, {
-        parse_mode: 'Markdown',
-        reply_markup: balanceKeyboard
-    });
-});
-
-// Handle withdraw_claim command
-bot.onText(/withdraw_claim (.+) (.+) (.+)/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const username = match[1];
-    const destinationAddress = match[2];
-    const amount = parseFloat(match[3]);
-
-    if (isNaN(amount) || amount <= 0) {
-        await bot.sendMessage(chatId, '❌ Please provide a valid amount greater than 0.');
-        return;
-    }
-
-    const wallet = claimWallets.get(username);
-    if (!wallet) {
-        await bot.sendMessage(chatId, '❌ Claim wallet not found.');
-        return;
-    }
-
-    try {
-        const balance = await getWalletBalance(wallet.publicKey);
-        if (balance < amount) {
-            await bot.sendMessage(chatId, `❌ Insufficient balance. Your current balance is *${balance} SOL*`, {
-                parse_mode: 'Markdown'
-            });
-            return;
-        }
-
-        const senderKeypair = createWalletFromPrivateKey(wallet.privateKey);
-        const transaction = new Transaction().add(
-            SystemProgram.transfer({
-                fromPubkey: senderKeypair.publicKey,
-                toPubkey: new PublicKey(destinationAddress),
-                lamports: amount * LAMPORTS_PER_SOL
-            })
-        );
-
-        const signature = await connection.sendTransaction(
-            transaction,
-            [senderKeypair]
-        );
-        await connection.confirmTransaction(signature);
-
-        const claimKeyboard = {
-            inline_keyboard: [
-                [{ text: "📤 Withdraw", callback_data: `withdraw_claim_${username}` }],
-                [{ text: "📊 Check Balance", callback_data: `balance_claim_${username}` }],
-                [{ text: "🔑 Show Private Key", callback_data: `show_key_${username}` }]
-            ]
-        };
-
-        await bot.sendMessage(chatId, `✅ *Successfully withdrew ${amount} SOL from your claim wallet!*\n\nTransaction signature: \`${signature}\``, {
-            parse_mode: 'Markdown',
-            reply_markup: claimKeyboard
-        });
-    } catch (error) {
-        console.error('Withdraw error:', error);
-        await bot.sendMessage(chatId, '❌ Failed to withdraw SOL. Please check the destination address and try again.');
-    }
-});
-
-// Error handling
-bot.on('polling_error', (error) => {
-    console.log(error);
-}); 
