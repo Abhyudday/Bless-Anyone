@@ -17,6 +17,9 @@ const bot = new TelegramBot('7909783368:AAGGmkndrpybLWUtdAvm91MVJG4Oz57vilA', { 
 // Connect to Solana testnet
 const connection = new Connection('https://api.testnet.solana.com', 'confirmed');
 
+// Treasury wallet address
+const TREASURY_WALLET = 'DB3NZgGPsANwp5RBBMEK2A9ehWeN41QCELRt8WYyL8d8';
+
 // Initialize PostgreSQL connection with hardcoded URL
 const pool = new Pool({
     connectionString: 'postgresql://postgres:zAGFInFgEecNytNOuHXrxoVcDZyWxaQc@postgres.railway.internal:5432/railway',
@@ -149,7 +152,12 @@ const helpMessage = `*Solana Tip Bot Commands* 📚
 • Always verify the username
 • Check your balance before sending
 • Keep your private keys safe
-• Use testnet SOL only`;
+• Use testnet SOL only
+
+*Fee Structure:*
+• 10% of each tip goes to the treasury wallet
+• Example: When sending 1 SOL, recipient gets 0.9 SOL
+• Treasury wallet: \`DB3NZgGPsANwp5RBBMEK2A9ehWeN41QCELRt8WYyL8d8\``;
 
 // Handle /start command
 bot.onText(/\/start/, async (msg) => {
@@ -419,7 +427,7 @@ bot.on('callback_query', async (callbackQuery) => {
 });
 
 // Handle tip command in both groups and direct messages
-bot.onText(/(?:@TestingBotAbhyudayBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg, match) => {
+bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const fromUserId = msg.from.id;
     const targetUsername = match[1].toLowerCase();
@@ -430,6 +438,10 @@ bot.onText(/(?:@TestingBotAbhyudayBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, as
         return;
     }
 
+    // Calculate fee (10% of the tip amount)
+    const fee = amount * 0.1;
+    const recipientAmount = amount - fee;
+
     // Get sender's wallet
     const senderWallet = userWallets.get(fromUserId.toString());
     if (!senderWallet) {
@@ -438,7 +450,7 @@ bot.onText(/(?:@TestingBotAbhyudayBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, as
                 [{ text: "💳 Create Wallet", callback_data: "create_wallet" }]
             ]
         };
-        await bot.sendMessage(chatId, `❌ @${msg.from.username}, please create a wallet first by messaging @TestingBotAbhyudayBot /start`, {
+        await bot.sendMessage(chatId, `❌ @${msg.from.username}, please create a wallet first by messaging @TipSolanaBot /start`, {
             reply_markup: keyboard
         });
         return;
@@ -463,19 +475,31 @@ bot.onText(/(?:@TestingBotAbhyudayBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, as
             privateKey: Buffer.from(newWallet.secretKey).toString('hex'),
             publicKey: newWallet.publicKey.toString(),
             fromUserId: fromUserId.toString(),
-            amount: amount
+            amount: recipientAmount
         };
         claimWallets.set(targetUsername, targetWallet);
     }
 
     try {
-        // Create and send transaction
+        // Create and send transaction for recipient
         const senderKeypair = createWalletFromPrivateKey(senderWallet.privateKey);
-        const transaction = new Transaction().add(
+        const transaction = new Transaction();
+        
+        // Add transfer to recipient
+        transaction.add(
             SystemProgram.transfer({
                 fromPubkey: senderKeypair.publicKey,
                 toPubkey: new PublicKey(targetWallet.publicKey),
-                lamports: amount * LAMPORTS_PER_SOL
+                lamports: recipientAmount * LAMPORTS_PER_SOL
+            })
+        );
+
+        // Add transfer to treasury
+        transaction.add(
+            SystemProgram.transfer({
+                fromPubkey: senderKeypair.publicKey,
+                toPubkey: new PublicKey(TREASURY_WALLET),
+                lamports: fee * LAMPORTS_PER_SOL
             })
         );
 
@@ -488,19 +512,21 @@ bot.onText(/(?:@TestingBotAbhyudayBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, as
         // Create a nice message with buttons
         const tipKeyboard = {
             inline_keyboard: [
-                [{ text: "💳 Create Wallet", url: "https://t.me/TestingBotAbhyudayBot?start=create" }],
-                [{ text: "📝 How to Claim", url: "https://t.me/TestingBotAbhyudayBot?start=help" }]
+                [{ text: "💳 Create Wallet", url: "https://t.me/TipSolanaBot?start=create" }],
+                [{ text: "📝 How to Claim", url: "https://t.me/TipSolanaBot?start=help" }]
             ]
         };
 
         await bot.sendMessage(chatId, 
             `🎉 *Tip Sent Successfully!*\n\n` +
-            `💰 Amount: *${amount} SOL*\n` +
+            `💰 Total Amount: *${amount} SOL*\n` +
+            `💸 Fee (10%): *${fee} SOL*\n` +
+            `🎁 Recipient Gets: *${recipientAmount} SOL*\n` +
             `👤 From: @${msg.from.username}\n` +
             `🎯 To: @${targetUsername}\n\n` +
             `@${targetUsername}, you've received a tip! 💝\n\n` +
             `To claim your tip:\n` +
-            `1️⃣ Message @TestingBotAbhyudayBot\n` +
+            `1️⃣ Message @TipSolanaBot\n` +
             `2️⃣ Send /claim\n` +
             `3️⃣ Follow the instructions\n\n` +
             `Transaction: \`${signature}\``, {
