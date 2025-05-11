@@ -322,6 +322,137 @@ bot.on('callback_query', async (callbackQuery) => {
             });
         }
     }
+    else if (data.startsWith('transfer_all_')) {
+        const username = data.replace('transfer_all_', '');
+        const claimWallet = claimWallets.get(username);
+        const fundingWallet = userWallets.get(userId.toString());
+
+        if (!claimWallet) {
+            await bot.sendMessage(chatId, "❌ Error: Claim wallet not found.");
+            return;
+        }
+
+        if (!fundingWallet) {
+            await bot.sendMessage(chatId, "❌ Error: Funding wallet not found. Please create a wallet first.");
+            return;
+        }
+
+        const balance = await getWalletBalance(claimWallet.publicKey);
+        if (balance <= 0) {
+            await bot.sendMessage(chatId, "❌ No funds available to transfer.");
+            return;
+        }
+
+        try {
+            // Send processing message
+            const processingMsg = await bot.sendMessage(chatId, 
+                `⏳ *Processing Transfer*\n\n` +
+                `💰 Amount: *${balance} SOL*\n` +
+                `👤 From: Claim Wallet\n` +
+                `🎯 To: Funding Wallet\n\n` +
+                `Please wait while we process your transaction...`, {
+                parse_mode: 'Markdown'
+            });
+
+            const senderKeypair = createWalletFromPrivateKey(claimWallet.privateKey);
+            const transaction = new Transaction().add(
+                SystemProgram.transfer({
+                    fromPubkey: senderKeypair.publicKey,
+                    toPubkey: new PublicKey(fundingWallet.publicKey),
+                    lamports: balance * LAMPORTS_PER_SOL
+                })
+            );
+
+            // Get recent blockhash
+            const { blockhash } = await connection.getLatestBlockhash();
+            transaction.recentBlockhash = blockhash;
+            transaction.feePayer = senderKeypair.publicKey;
+
+            const signature = await connection.sendTransaction(
+                transaction,
+                [senderKeypair]
+            );
+
+            // Wait for confirmation with timeout
+            try {
+                const confirmation = await Promise.race([
+                    connection.confirmTransaction(signature),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Transaction confirmation timeout')), 30000)
+                    )
+                ]);
+
+                if (confirmation.value?.err) {
+                    throw new Error('Transaction failed to confirm');
+                }
+            } catch (confirmError) {
+                // If confirmation times out, check transaction status
+                const isConfirmed = await checkTransactionStatus(connection, signature);
+                if (!isConfirmed) {
+                    throw confirmError;
+                }
+            }
+
+            // Delete processing message
+            await bot.deleteMessage(chatId, processingMsg.message_id);
+
+            const claimKeyboard = {
+                inline_keyboard: [
+                    [{ text: "📤 Withdraw Funds", callback_data: `withdraw_claim_${username}` }],
+                    [{ text: "📊 Check Balance", callback_data: `balance_claim_${username}` }],
+                    [{ text: "🔑 Show Private Key", callback_data: `show_key_${username}` }],
+                    [{ text: "🔍 View Transaction", url: getTransactionLink(signature) }]
+                ]
+            };
+
+            await bot.sendMessage(chatId, 
+                `🎉 *Transfer Successful!*\n\n` +
+                `💰 Amount: *${balance} SOL*\n` +
+                `👤 From: Claim Wallet\n` +
+                `🎯 To: Funding Wallet\n\n` +
+                `Transaction: \`${signature}\`\n` +
+                `[View on Solscan](${getTransactionLink(signature)})`, {
+                parse_mode: 'Markdown',
+                reply_markup: claimKeyboard
+            });
+        } catch (error) {
+            console.error('Transfer error:', error);
+            
+            // Check if the transaction was actually successful despite the error
+            const isConfirmed = await checkTransactionStatus(connection, signature);
+            if (isConfirmed) {
+                // Transaction was successful, send success message
+                const claimKeyboard = {
+                    inline_keyboard: [
+                        [{ text: "📤 Withdraw Funds", callback_data: `withdraw_claim_${username}` }],
+                        [{ text: "📊 Check Balance", callback_data: `balance_claim_${username}` }],
+                        [{ text: "🔑 Show Private Key", callback_data: `show_key_${username}` }],
+                        [{ text: "🔍 View Transaction", url: getTransactionLink(signature) }]
+                    ]
+                };
+
+                await bot.sendMessage(chatId, 
+                    `🎉 *Transfer Successful!*\n\n` +
+                    `💰 Amount: *${balance} SOL*\n` +
+                    `👤 From: Claim Wallet\n` +
+                    `🎯 To: Funding Wallet\n\n` +
+                    `Transaction: \`${signature}\`\n` +
+                    `[View on Solscan](${getTransactionLink(signature)})`, {
+                    parse_mode: 'Markdown',
+                    reply_markup: claimKeyboard
+                });
+                return;
+            }
+            
+            // If we get here, the transaction truly failed
+            await bot.sendMessage(chatId, 
+                `❌ *Transfer Failed*\n\n` +
+                `Error: ${error.message}\n\n` +
+                `Please try again later.`, {
+                parse_mode: 'Markdown'
+            });
+        }
+    }
     else {
         // Existing callback handlers
         switch (data) {
@@ -772,7 +903,8 @@ bot.onText(/\/claim/, async (msg) => {
         inline_keyboard: [
             [{ text: "📤 Withdraw Funds", callback_data: `withdraw_claim_${username}` }],
             [{ text: "📊 Check Balance", callback_data: `balance_claim_${username}` }],
-            [{ text: "🔑 Show Private Key", callback_data: `show_key_${username}` }]
+            [{ text: "🔑 Show Private Key", callback_data: `show_key_${username}` }],
+            [{ text: "💸 Transfer All to Funding Wallet", callback_data: `transfer_all_${username}` }]
         ]
     };
     
@@ -782,7 +914,8 @@ bot.onText(/\/claim/, async (msg) => {
         `*What would you like to do?*\n\n` +
         `📤 Withdraw - Send funds to another wallet\n` +
         `📊 Check Balance - View your current balance\n` +
-        `🔑 Show Private Key - Get your wallet details`, {
+        `🔑 Show Private Key - Get your wallet details\n` +
+        `💸 Transfer All - Move all funds to your funding wallet`, {
         parse_mode: 'Markdown',
         reply_markup: claimKeyboard
     });
