@@ -255,7 +255,11 @@ bot.on('callback_query', async (callbackQuery) => {
                     [{ text: "🔙 Back to Claim", callback_data: `back_to_claim_${username}` }]
                 ]
             };
-            await bot.sendMessage(chatId, `*Your Claim Wallet Private Key:*\n\n\`${wallet.privateKey}\`\n\n⚠️ *Keep this private key safe and never share it with anyone!*`, {
+            await bot.sendMessage(chatId, 
+                `*Your Claim Wallet Private Key:*\n\n` +
+                `||${wallet.privateKey}||\n\n` +
+                `⚠️ *Keep this private key safe and never share it with anyone!*\n\n` +
+                `*Click on the blurred text above to reveal your private key.*`, {
                 parse_mode: 'Markdown',
                 reply_markup: claimKeyboard
             });
@@ -273,7 +277,11 @@ bot.on('callback_query', async (callbackQuery) => {
                     [{ text: "🔑 Show Private Key", callback_data: `show_key_${username}` }]
                 ]
             };
-            await bot.sendMessage(chatId, `🎉 *Here's your claim wallet information:*\n\nPublic Key: \`${wallet.publicKey}\`\nCurrent Balance: *${balance} SOL*\n\nWhat would you like to do?`, {
+            await bot.sendMessage(chatId, 
+                `🎉 *Here's your claim wallet information:*\n\n` +
+                `Public Key: \`${wallet.publicKey}\`\n\n` +
+                `Current Balance: *${balance} SOL*\n\n` +
+                `*What would you like to do?*`, {
                 parse_mode: 'Markdown',
                 reply_markup: claimKeyboard
             });
@@ -304,7 +312,13 @@ bot.on('callback_query', async (callbackQuery) => {
                         ]
                     };
                     
-                    await bot.sendMessage(chatId, `✅ *Your Wallet Details:*\n\nPublic Key: \`${existingWallet.publicKey}\`\nPrivate Key: \`${existingWallet.privateKey}\`\nCurrent Balance: *${balance} SOL*\n\nKeep your private key safe and never share it with anyone!`, {
+                    await bot.sendMessage(chatId, 
+                        `✅ *Your Wallet Details:*\n\n` +
+                        `Public Key: \`${existingWallet.publicKey}\`\n\n` +
+                        `Private Key: ||${existingWallet.privateKey}||\n\n` +
+                        `Current Balance: *${balance} SOL*\n\n` +
+                        `*Keep your private key safe and never share it with anyone!*\n\n` +
+                        `*Click on the blurred text above to reveal your private key.*`, {
                         parse_mode: 'Markdown',
                         reply_markup: walletKeyboard
                     });
@@ -362,7 +376,13 @@ bot.on('callback_query', async (callbackQuery) => {
                             [{ text: "📊 Check Balance", callback_data: "check_balance" }]
                         ]
                     };
-                    await bot.sendMessage(chatId, `*Your Wallet Details:*\n\nPublic Key: \`${userWallet.publicKey}\`\nPrivate Key: \`${userWallet.privateKey}\`\nCurrent Balance: *${balance} SOL*`, {
+                    await bot.sendMessage(chatId, 
+                        `*Your Wallet Details:*\n\n` +
+                        `Public Key: \`${userWallet.publicKey}\`\n\n` +
+                        `Private Key: ||${userWallet.privateKey}||\n\n` +
+                        `Current Balance: *${balance} SOL*\n\n` +
+                        `*Keep your private key safe and never share it with anyone!*\n\n` +
+                        `*Click on the blurred text above to reveal your private key.*`, {
                         parse_mode: 'Markdown',
                         reply_markup: walletKeyboard
                     });
