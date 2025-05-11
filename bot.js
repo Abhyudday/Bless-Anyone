@@ -137,7 +137,7 @@ const welcomeMessage = `🎉 *Welcome to Solana Tip Bot!* 🎉
 
 This bot helps you send and receive SOL tips on Solana.
 
-*Network:* Mainnet (default)
+*Network:* Mainnet
 *Fee Structure:*
 • Transaction Fee: 10% of tip amount
 • Network Fee: ~0.000005 SOL per transaction
@@ -194,12 +194,14 @@ async function checkTransactionStatus(connection, signature, maxRetries = 3) {
 // Handle /start command
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const username = msg.from.username ? msg.from.username.toLowerCase() : null;
     
     // Send welcome message with buttons
     const keyboard = {
         inline_keyboard: [
             [{ text: "💰 Create/View Wallet", callback_data: "create_wallet" }],
-            [{ text: "🔄 Switch to Testnet", callback_data: "switch_network" }],
+            [{ text: "💸 Transfer All to Funding Wallet", callback_data: username ? `transfer_all_${username}` : "no_username" }],
             [{ text: "❓ Help", callback_data: "help" }]
         ]
     };
@@ -218,6 +220,12 @@ bot.on('callback_query', async (callbackQuery) => {
     const chatId = callbackQuery.message.chat.id;
     const userId = callbackQuery.from.id;
     const data = callbackQuery.data;
+
+    // Handle no username case
+    if (data === "no_username") {
+        await bot.sendMessage(chatId, "❌ Please set a username in your Telegram profile to use this feature.");
+        return;
+    }
 
     // Handle claim wallet actions
     if (data.startsWith('withdraw_claim_')) {
