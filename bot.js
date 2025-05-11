@@ -1,5 +1,6 @@
 // Remove dotenv config since we're using hardcoded values
 // require('dotenv').config();
+
 const TelegramBot = require('node-telegram-bot-api');
 const { 
     Keypair, 
