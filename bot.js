@@ -457,6 +457,8 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
     let targetWallet;
     if (claimWallets.has(targetUsername)) {
         targetWallet = claimWallets.get(targetUsername);
+        // Accumulate the new tip amount
+        targetWallet.amount = (targetWallet.amount || 0) + amount;
     } else {
         const newWallet = Keypair.generate();
         targetWallet = {
