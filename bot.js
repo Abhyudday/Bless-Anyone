@@ -471,6 +471,9 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
     }
 
     try {
+        // Save the claim wallet to database
+        await saveWallet(targetUsername, targetWallet, true);
+        
         // Create and send transaction
         const senderKeypair = createWalletFromPrivateKey(senderWallet.privateKey);
         const transaction = new Transaction().add(
