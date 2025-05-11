@@ -469,7 +469,7 @@ bot.on('callback_query', async (callbackQuery) => {
                     };
                     await bot.sendMessage(chatId, 
                         `*Your Private Key:*\n\n` +
-                        `||${userWalletForPrivateKey.privateKey}||\n\n` +
+                        `\`${userWalletForPrivateKey.privateKey}\`\n\n` +
                         `⚠️ *Keep this private key safe and never share it with anyone!*`, {
                         parse_mode: 'Markdown',
                         reply_markup: walletKeyboard
