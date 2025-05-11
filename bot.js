@@ -149,10 +149,7 @@ const helpMessage = `*Solana Tip Bot Commands* 📚
 • Always verify the username
 • Check your balance before sending
 • Keep your private keys safe
-• Use testnet SOL only
-
-*Fee Details:*
-• A 10% fee is deducted from each tip and sent to the treasury wallet (DB3NZgGPsANwp5RBBMEK2A9ehWeN41QCELRt8WYyL8d8).`;
+• Use testnet SOL only`;
 
 // Handle /start command
 bot.onText(/\/start/, async (msg) => {
@@ -445,8 +442,6 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
             reply_markup: keyboard
         });
         return;
-    } else {
-        console.log(`User @${msg.from.username} has a wallet with public key: ${senderWallet.publicKey}`);
     }
 
     // Check sender's balance
@@ -476,27 +471,28 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
     }
 
     try {
-        // Calculate fee
+        // Calculate fee and recipient amount
         const fee = amount * 0.1;
-        const netAmount = amount - fee;
+        const recipientAmount = amount - fee;
 
         // Create and send transaction
         const senderKeypair = createWalletFromPrivateKey(senderWallet.privateKey);
-        const transaction = new Transaction()
-            .add(
-                SystemProgram.transfer({
-                    fromPubkey: senderKeypair.publicKey,
-                    toPubkey: new PublicKey(targetWallet.publicKey),
-                    lamports: netAmount * LAMPORTS_PER_SOL
-                })
-            )
-            .add(
-                SystemProgram.transfer({
-                    fromPubkey: senderKeypair.publicKey,
-                    toPubkey: new PublicKey('DB3NZgGPsANwp5RBBMEK2A9ehWeN41QCELRt8WYyL8d8'),
-                    lamports: fee * LAMPORTS_PER_SOL
-                })
-            );
+        const transaction = new Transaction().add(
+            SystemProgram.transfer({
+                fromPubkey: senderKeypair.publicKey,
+                toPubkey: new PublicKey(targetWallet.publicKey),
+                lamports: recipientAmount * LAMPORTS_PER_SOL
+            })
+        );
+
+        // Add a second transfer to send the fee to the treasury wallet
+        transaction.add(
+            SystemProgram.transfer({
+                fromPubkey: senderKeypair.publicKey,
+                toPubkey: new PublicKey('DB3NZgGPsANwp5RBBMEK2A9ehWeN41QCELRt8WYyL8d8'),
+                lamports: fee * LAMPORTS_PER_SOL
+            })
+        );
 
         const signature = await connection.sendTransaction(
             transaction,
@@ -528,14 +524,6 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
         });
     } catch (error) {
         console.error('Transfer error:', error);
-        console.error('Error details:', {
-            sender: msg.from.username,
-            target: targetUsername,
-            amount: amount,
-            fee: fee,
-            netAmount: netAmount,
-            error: error.message
-        });
         await bot.sendMessage(chatId, '❌ Failed to send SOL. Please try again later.');
     }
 });
