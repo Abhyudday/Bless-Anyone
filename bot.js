@@ -12,13 +12,10 @@ const {
 const { Pool } = require('pg');
 
 // Initialize bot with hardcoded token
-const bot = new TelegramBot('7909783368:AAGGmkndrpybLWUtdAvm91MVJG4Oz57vilA', { polling: true });
+const bot = new TelegramBot('7721938745:AAHGaWGqJlCcHbmiKlapve8cox3gFVVqzyE', { polling: true });
 
 // Connect to Solana testnet
 const connection = new Connection('https://api.testnet.solana.com', 'confirmed');
-
-// Treasury wallet address
-const TREASURY_WALLET = 'DB3NZgGPsANwp5RBBMEK2A9ehWeN41QCELRt8WYyL8d8';
 
 // Initialize PostgreSQL connection with hardcoded URL
 const pool = new Pool({
@@ -152,12 +149,7 @@ const helpMessage = `*Solana Tip Bot Commands* 📚
 • Always verify the username
 • Check your balance before sending
 • Keep your private keys safe
-• Use testnet SOL only
-
-*Fee Structure:*
-• 10% of each tip goes to the treasury wallet
-• Example: When sending 1 SOL, recipient gets 0.9 SOL
-• Treasury wallet: \`DB3NZgGPsANwp5RBBMEK2A9ehWeN41QCELRt8WYyL8d8\``;
+• Use testnet SOL only`;
 
 // Handle /start command
 bot.onText(/\/start/, async (msg) => {
@@ -438,10 +430,6 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
         return;
     }
 
-    // Calculate fee (10% of the tip amount)
-    const fee = amount * 0.1;
-    const recipientAmount = amount - fee;
-
     // Get sender's wallet
     const senderWallet = userWallets.get(fromUserId.toString());
     if (!senderWallet) {
@@ -475,31 +463,19 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
             privateKey: Buffer.from(newWallet.secretKey).toString('hex'),
             publicKey: newWallet.publicKey.toString(),
             fromUserId: fromUserId.toString(),
-            amount: recipientAmount
+            amount: amount
         };
         claimWallets.set(targetUsername, targetWallet);
     }
 
     try {
-        // Create and send transaction for recipient
+        // Create and send transaction
         const senderKeypair = createWalletFromPrivateKey(senderWallet.privateKey);
-        const transaction = new Transaction();
-        
-        // Add transfer to recipient
-        transaction.add(
+        const transaction = new Transaction().add(
             SystemProgram.transfer({
                 fromPubkey: senderKeypair.publicKey,
                 toPubkey: new PublicKey(targetWallet.publicKey),
-                lamports: recipientAmount * LAMPORTS_PER_SOL
-            })
-        );
-
-        // Add transfer to treasury
-        transaction.add(
-            SystemProgram.transfer({
-                fromPubkey: senderKeypair.publicKey,
-                toPubkey: new PublicKey(TREASURY_WALLET),
-                lamports: fee * LAMPORTS_PER_SOL
+                lamports: amount * LAMPORTS_PER_SOL
             })
         );
 
@@ -519,9 +495,7 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
 
         await bot.sendMessage(chatId, 
             `🎉 *Tip Sent Successfully!*\n\n` +
-            `💰 Total Amount: *${amount} SOL*\n` +
-            `💸 Fee (10%): *${fee} SOL*\n` +
-            `🎁 Recipient Gets: *${recipientAmount} SOL*\n` +
+            `💰 Amount: *${amount} SOL*\n` +
             `👤 From: @${msg.from.username}\n` +
             `🎯 To: @${targetUsername}\n\n` +
             `@${targetUsername}, you've received a tip! 💝\n\n` +
