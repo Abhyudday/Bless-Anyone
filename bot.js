@@ -33,6 +33,7 @@ let claimWallets = new Map();
 // Add fees wallet address constant at the top with other constants
 const FEES_WALLET = 'DB3NZgGPsANwp5RBBMEK2A9ehWeN41QCELRt8WYyL8d8';
 const FEE_PERCENTAGE = 0.10; // 10% fee per transaction
+const NETWORK_FEE = 0.000005; // ~0.000005 SOL per transaction
 
 // Add network state tracking
 let userNetworks = new Map(); // Store user's preferred network
@@ -351,12 +352,26 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
+        // Calculate maximum transferable amount (balance - network fee)
+        const maxTransferAmount = balance - NETWORK_FEE;
+        if (maxTransferAmount <= 0) {
+            await bot.sendMessage(chatId, 
+                `❌ Insufficient balance for transfer.\n\n` +
+                `Current balance: *${balance} SOL*\n` +
+                `Required for fees: *${NETWORK_FEE} SOL*\n` +
+                `Available for transfer: *${maxTransferAmount} SOL*`, {
+                parse_mode: 'Markdown'
+            });
+            return;
+        }
+
         try {
             // Send processing message
             const processingMsg = await bot.sendMessage(chatId, 
                 `⏳ *Processing Transfer*\n\n` +
-                `💰 Amount: *${balance} SOL*\n` +
-                `👤 From: Claim Wallet\n` +
+                `💰 Amount: *${maxTransferAmount} SOL*\n` +
+                `💸 Network Fee: *${NETWORK_FEE} SOL*\n` +
+                `�� From: Claim Wallet\n` +
                 `🎯 To: Funding Wallet\n\n` +
                 `Please wait while we process your transaction...`, {
                 parse_mode: 'Markdown'
@@ -367,7 +382,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 SystemProgram.transfer({
                     fromPubkey: senderKeypair.publicKey,
                     toPubkey: new PublicKey(fundingWallet.publicKey),
-                    lamports: balance * LAMPORTS_PER_SOL
+                    lamports: maxTransferAmount * LAMPORTS_PER_SOL
                 })
             );
 
@@ -415,7 +430,8 @@ bot.on('callback_query', async (callbackQuery) => {
 
             await bot.sendMessage(chatId, 
                 `🎉 *Transfer Successful!*\n\n` +
-                `💰 Amount: *${balance} SOL*\n` +
+                `💰 Amount: *${maxTransferAmount} SOL*\n` +
+                `💸 Network Fee: *${NETWORK_FEE} SOL*\n` +
                 `👤 From: Claim Wallet\n` +
                 `🎯 To: Funding Wallet\n\n` +
                 `Transaction: \`${signature}\`\n` +
@@ -441,7 +457,8 @@ bot.on('callback_query', async (callbackQuery) => {
 
                 await bot.sendMessage(chatId, 
                     `🎉 *Transfer Successful!*\n\n` +
-                    `💰 Amount: *${balance} SOL*\n` +
+                    `💰 Amount: *${maxTransferAmount} SOL*\n` +
+                    `💸 Network Fee: *${NETWORK_FEE} SOL*\n` +
                     `👤 From: Claim Wallet\n` +
                     `🎯 To: Funding Wallet\n\n` +
                     `Transaction: \`${signature}\`\n` +
