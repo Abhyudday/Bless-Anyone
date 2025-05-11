@@ -259,8 +259,8 @@ bot.on('callback_query', async (callbackQuery) => {
                 `*Your Claim Wallet Private Key:*\n\n` +
                 `||${wallet.privateKey}||\n\n` +
                 `⚠️ *Keep this private key safe and never share it with anyone!*\n\n` +
-                `*Click on the blurred text above to reveal your private key.*`, {
-                parse_mode: 'Markdown',
+                `*Click on the blurred text above to reveal your private key*`, {
+                parse_mode: 'MarkdownV2',
                 reply_markup: claimKeyboard
             });
         }
@@ -385,8 +385,8 @@ bot.on('callback_query', async (callbackQuery) => {
                         `Private Key: ||${userWallet.privateKey}||\n\n` +
                         `Current Balance: *${balance} SOL*\n\n` +
                         `*Keep your private key safe and never share it with anyone!*\n\n` +
-                        `*Click on the blurred text above to reveal your private key.*`, {
-                        parse_mode: 'Markdown',
+                        `*Click on the blurred text above to reveal your private key*`, {
+                        parse_mode: 'MarkdownV2',
                         reply_markup: walletKeyboard
                     });
                 }
@@ -456,8 +456,8 @@ bot.on('callback_query', async (callbackQuery) => {
                         `*Your Private Key:*\n\n` +
                         `||${userWalletForPrivateKey.privateKey}||\n\n` +
                         `⚠️ *Keep this private key safe and never share it with anyone!*\n\n` +
-                        `*Click on the blurred text above to reveal your private key.*`, {
-                        parse_mode: 'Markdown',
+                        `*Click on the blurred text above to reveal your private key*`, {
+                        parse_mode: 'MarkdownV2',
                         reply_markup: walletKeyboard
                     });
                 }
