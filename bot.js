@@ -74,7 +74,7 @@ async function loadWallets() {
                 privateKey: row.private_key,
                 publicKey: row.public_key,
                 fromUserId: row.from_user_id,
-                amount: row.amount
+                amount: parseFloat(row.amount) || 0
             });
         });
         console.log('Wallets loaded successfully from database');
