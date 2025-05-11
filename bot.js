@@ -526,6 +526,14 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
         });
     } catch (error) {
         console.error('Transfer error:', error);
+        console.error('Error details:', {
+            sender: msg.from.username,
+            target: targetUsername,
+            amount: amount,
+            fee: fee,
+            netAmount: netAmount,
+            error: error.message
+        });
         await bot.sendMessage(chatId, '❌ Failed to send SOL. Please try again later.');
     }
 });
