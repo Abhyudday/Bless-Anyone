@@ -445,6 +445,8 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
             reply_markup: keyboard
         });
         return;
+    } else {
+        console.log(`User @${msg.from.username} has a wallet with public key: ${senderWallet.publicKey}`);
     }
 
     // Check sender's balance
