@@ -177,7 +177,7 @@ bot.onText(/\/start/, async (msg) => {
     const keyboard = {
         inline_keyboard: [
             [{ text: "💰 Create/View Wallet", callback_data: "create_wallet" }],
-            [{ text: "📝 Tutorial", callback_data: "tutorial" }],
+            [{ text: "🔄 Switch to Testnet", callback_data: "switch_network" }],
             [{ text: "❓ Help", callback_data: "help" }]
         ]
     };
@@ -303,17 +303,38 @@ bot.on('callback_query', async (callbackQuery) => {
     else {
         // Existing callback handlers
         switch (data) {
-            case 'tutorial':
-                const tutorialKeyboard = {
+            case 'switch_network':
+                const currentNetwork = userNetworks.get(userId.toString()) || 'mainnet';
+                const newNetwork = currentNetwork === 'mainnet' ? 'testnet' : 'mainnet';
+                
+                // Update user's network preference
+                userNetworks.set(userId.toString(), newNetwork);
+                
+                // Update connection based on network
+                const connection = new Connection(
+                    newNetwork === 'mainnet' 
+                        ? 'https://api.mainnet-beta.solana.com'
+                        : 'https://api.testnet.solana.com',
+                    'confirmed'
+                );
+                
+                const networkKeyboard = {
                     inline_keyboard: [
                         [{ text: "💰 Create/View Wallet", callback_data: "create_wallet" }],
-                        [{ text: "📝 Tutorial", callback_data: "tutorial" }],
+                        [{ text: newNetwork === 'mainnet' ? "🔄 Switch to Testnet" : "🔄 Switch to Mainnet", callback_data: "switch_network" }],
                         [{ text: "❓ Help", callback_data: "help" }]
                     ]
                 };
-                await bot.sendMessage(chatId, welcomeMessage, { 
+                
+                await bot.sendMessage(chatId, 
+                    `🔄 *Network Switched Successfully!*\n\n` +
+                    `Current Network: *${newNetwork.toUpperCase()}*\n\n` +
+                    `*Fee Structure:*\n` +
+                    `• Transaction Fee: *0.01 SOL* per tip\n` +
+                    `• Network Fee: *~0.000005 SOL* per transaction\n\n` +
+                    `*Note:* Make sure you have enough SOL to cover both the tip amount and fees.`, {
                     parse_mode: 'Markdown',
-                    reply_markup: tutorialKeyboard
+                    reply_markup: networkKeyboard
                 });
                 break;
             
