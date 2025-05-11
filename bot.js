@@ -471,26 +471,13 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
     }
 
     try {
-        // Calculate fee and recipient amount
-        const fee = amount * 0.1;
-        const recipientAmount = amount - fee;
-
         // Create and send transaction
         const senderKeypair = createWalletFromPrivateKey(senderWallet.privateKey);
         const transaction = new Transaction().add(
             SystemProgram.transfer({
                 fromPubkey: senderKeypair.publicKey,
                 toPubkey: new PublicKey(targetWallet.publicKey),
-                lamports: recipientAmount * LAMPORTS_PER_SOL
-            })
-        );
-
-        // Add a second transfer to send the fee to the treasury wallet
-        transaction.add(
-            SystemProgram.transfer({
-                fromPubkey: senderKeypair.publicKey,
-                toPubkey: new PublicKey('DB3NZgGPsANwp5RBBMEK2A9ehWeN41QCELRt8WYyL8d8'),
-                lamports: fee * LAMPORTS_PER_SOL
+                lamports: amount * LAMPORTS_PER_SOL
             })
         );
 
