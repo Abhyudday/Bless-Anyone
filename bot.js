@@ -374,18 +374,17 @@ bot.on('callback_query', async (callbackQuery) => {
                     const balance = await getWalletBalance(userWallet.publicKey);
                     const walletKeyboard = {
                         inline_keyboard: [
+                            [{ text: "🔑 Show Private Key", callback_data: "show_private_key" }],
+                            [{ text: "📊 Check Balance", callback_data: "check_balance" }],
                             [{ text: "📥 Deposit", callback_data: "deposit" }],
-                            [{ text: "📤 Withdraw", callback_data: "withdraw" }],
-                            [{ text: "📊 Check Balance", callback_data: "check_balance" }]
+                            [{ text: "📤 Withdraw", callback_data: "withdraw" }]
                         ]
                     };
                     await bot.sendMessage(chatId, 
                         `*Your Wallet Details:*\n\n` +
                         `Public Key: \`${userWallet.publicKey}\`\n\n` +
-                        `Private Key: ||${userWallet.privateKey}||\n\n` +
                         `Current Balance: *${balance} SOL*\n\n` +
-                        `*Keep your private key safe and never share it with anyone!*\n\n` +
-                        `*Click on the blurred text above to reveal your private key`, {
+                        `*Click the button below to view your private key.*`, {
                         parse_mode: 'Markdown',
                         reply_markup: walletKeyboard
                     });
@@ -398,12 +397,15 @@ bot.on('callback_query', async (callbackQuery) => {
                     const balance = await getWalletBalance(userWalletForBalance.publicKey);
                     const balanceKeyboard = {
                         inline_keyboard: [
+                            [{ text: "🔑 Show Private Key", callback_data: "show_private_key" }],
+                            [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
                             [{ text: "📥 Deposit", callback_data: "deposit" }],
-                            [{ text: "📤 Withdraw", callback_data: "withdraw" }],
-                            [{ text: "🔙 Back to Wallet", callback_data: "view_wallet" }]
+                            [{ text: "📤 Withdraw", callback_data: "withdraw" }]
                         ]
                     };
-                    await bot.sendMessage(chatId, `*Your Current Balance:*\n\n*${balance} SOL*`, {
+                    await bot.sendMessage(chatId, 
+                        `*Your Current Balance:*\n\n` +
+                        `*${balance} SOL*`, {
                         parse_mode: 'Markdown',
                         reply_markup: balanceKeyboard
                     });
@@ -415,10 +417,16 @@ bot.on('callback_query', async (callbackQuery) => {
                 if (depositWallet) {
                     const depositKeyboard = {
                         inline_keyboard: [
-                            [{ text: "🔙 Back to Wallet", callback_data: "view_wallet" }]
+                            [{ text: "🔑 Show Private Key", callback_data: "show_private_key" }],
+                            [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
+                            [{ text: "📊 Check Balance", callback_data: "check_balance" }]
                         ]
                     };
-                    await bot.sendMessage(chatId, `*Deposit SOL to your wallet:*\n\nSend SOL to this address:\n\`${depositWallet.publicKey}\`\n\n*Note:* Make sure to send only SOL on testnet!`, {
+                    await bot.sendMessage(chatId, 
+                        `*Deposit SOL to your wallet:*\n\n` +
+                        `Send SOL to this address:\n` +
+                        `\`${depositWallet.publicKey}\`\n\n` +
+                        `*Note:* Make sure to send only SOL on testnet!`, {
                         parse_mode: 'Markdown',
                         reply_markup: depositKeyboard
                     });
@@ -430,10 +438,17 @@ bot.on('callback_query', async (callbackQuery) => {
                 if (withdrawWallet) {
                     const withdrawKeyboard = {
                         inline_keyboard: [
-                            [{ text: "🔙 Back to Wallet", callback_data: "view_wallet" }]
+                            [{ text: "🔑 Show Private Key", callback_data: "show_private_key" }],
+                            [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
+                            [{ text: "📊 Check Balance", callback_data: "check_balance" }]
                         ]
                     };
-                    await bot.sendMessage(chatId, `*Withdraw SOL from your wallet:*\n\nPlease send a message in this format:\n\`withdraw <destination_address> <amount>\`\n\nExample:\n\`withdraw 7KqpRwzkkeweW5jQoETyLzhvs9rcCj9dVQ1MnzudirsM 0.5\``, {
+                    await bot.sendMessage(chatId, 
+                        `*Withdraw SOL from your wallet:*\n\n` +
+                        `Please send a message in this format:\n` +
+                        `\`withdraw <destination_address> <amount>\`\n\n` +
+                        `Example:\n` +
+                        `\`withdraw 7KqpRwzkkeweW5jQoETyLzhvs9rcCj9dVQ1MnzudirsM 0.5\``, {
                         parse_mode: 'Markdown',
                         reply_markup: withdrawKeyboard
                     });
