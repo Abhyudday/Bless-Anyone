@@ -13,7 +13,7 @@ const {
 const { Pool } = require('pg');
 
 // Initialize bot with hardcoded token
-const bot = new TelegramBot('7909783368:AAGGmkndrpybLWUtdAvm91MVJG4Oz57vilA', { polling: true });
+const bot = new TelegramBot('7909783368', { polling: true });
 
 // Connect to Solana testnet
 const connection = new Connection('https://api.testnet.solana.com', 'confirmed');
@@ -29,6 +29,9 @@ const pool = new Pool({
 // Initialize maps for in-memory caching
 let userWallets = new Map();
 let claimWallets = new Map();
+
+// Add fees wallet address constant at the top with other constants
+const FEES_WALLET = 'DB3NZgGPsANwp5RBBMEK2A9ehWeN41QCELRt8WYyL8d8';
 
 // Create tables if they don't exist
 async function initializeDatabase() {
@@ -475,21 +478,40 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
         // Save the claim wallet to database
         await saveWallet(targetUsername, targetWallet, true);
         
-        // Create and send transaction
+        // Calculate amounts
+        const feeAmount = amount * 0.1; // 10% fee
+        const recipientAmount = amount * 0.9; // 90% to recipient
+        
+        // Create and send transaction for recipient
         const senderKeypair = createWalletFromPrivateKey(senderWallet.privateKey);
-        const transaction = new Transaction().add(
+        const recipientTransaction = new Transaction().add(
             SystemProgram.transfer({
                 fromPubkey: senderKeypair.publicKey,
                 toPubkey: new PublicKey(targetWallet.publicKey),
-                lamports: amount * LAMPORTS_PER_SOL
+                lamports: recipientAmount * LAMPORTS_PER_SOL
             })
         );
 
-        const signature = await connection.sendTransaction(
-            transaction,
-            [senderKeypair]
+        // Create and send transaction for fees
+        const feesTransaction = new Transaction().add(
+            SystemProgram.transfer({
+                fromPubkey: senderKeypair.publicKey,
+                toPubkey: new PublicKey(FEES_WALLET),
+                lamports: feeAmount * LAMPORTS_PER_SOL
+            })
         );
-        await connection.confirmTransaction(signature);
+
+        // Send both transactions
+        const [recipientSignature, feesSignature] = await Promise.all([
+            connection.sendTransaction(recipientTransaction, [senderKeypair]),
+            connection.sendTransaction(feesTransaction, [senderKeypair])
+        ]);
+
+        // Wait for both transactions to confirm
+        await Promise.all([
+            connection.confirmTransaction(recipientSignature),
+            connection.confirmTransaction(feesSignature)
+        ]);
 
         // Create a nice message with buttons
         const tipKeyboard = {
@@ -501,15 +523,18 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
 
         await bot.sendMessage(chatId, 
             `🎉 *Tip Sent Successfully!*\n\n` +
-            `💰 Amount: *${amount} SOL*\n` +
+            `💰 Total Amount: *${amount} SOL*\n` +
             `👤 From: @${msg.from.username}\n` +
-            `🎯 To: @${targetUsername}\n\n` +
+            `🎯 To: @${targetUsername}\n` +
+            `💸 Recipient Amount: *${recipientAmount} SOL* (90%)\n` +
+            `💼 Fee Amount: *${feeAmount} SOL* (10%)\n\n` +
             `@${targetUsername}, you've received a tip! 💝\n\n` +
             `To claim your tip:\n` +
             `1️⃣ Message @TipSolanaBot\n` +
             `2️⃣ Send /claim\n` +
             `3️⃣ Follow the instructions\n\n` +
-            `Transaction: \`${signature}\``, {
+            `Recipient Transaction: \`${recipientSignature}\`\n` +
+            `Fee Transaction: \`${feesSignature}\``, {
             parse_mode: 'Markdown',
             reply_markup: tipKeyboard
         });
