@@ -28,16 +28,116 @@ const pool = new Pool({
 
 // Initialize maps for in-memory caching
 let userWallets = new Map();
+let claimWallets = new Map();
 
 // Add fees wallet address constant at the top with other constants
 const FEES_WALLET = 'DB3NZgGPsANwp5RBBMEK2A9ehWeN41QCELRt8WYyL8d8';
 const FEE_PERCENTAGE = 0.10; // 10% fee per transaction
+
+// Add network state tracking
+let userNetworks = new Map(); // Store user's preferred network
+
+// Create tables if they don't exist
+async function initializeDatabase() {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS user_wallets (
+                user_id TEXT PRIMARY KEY,
+                private_key TEXT NOT NULL,
+                public_key TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            
+            CREATE TABLE IF NOT EXISTS claim_wallets (
+                username TEXT PRIMARY KEY,
+                private_key TEXT NOT NULL,
+                public_key TEXT NOT NULL,
+                from_user_id TEXT,
+                amount DECIMAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        console.log('Database initialized successfully');
+    } catch (error) {
+        console.error('Error initializing database:', error);
+    }
+}
+
+// Load wallets from database
+async function loadWallets() {
+    try {
+        // Load user wallets
+        const userWalletsResult = await pool.query('SELECT * FROM user_wallets');
+        userWalletsResult.rows.forEach(row => {
+            userWallets.set(row.user_id, {
+                privateKey: row.private_key,
+                publicKey: row.public_key
+            });
+        });
+
+        // Load claim wallets
+        const claimWalletsResult = await pool.query('SELECT * FROM claim_wallets');
+        claimWalletsResult.rows.forEach(row => {
+            claimWallets.set(row.username, {
+                privateKey: row.private_key,
+                publicKey: row.public_key,
+                fromUserId: row.from_user_id,
+                amount: parseFloat(row.amount) || 0
+            });
+        });
+        console.log('Wallets loaded successfully from database');
+    } catch (error) {
+        console.error('Error loading wallets:', error);
+    }
+}
+
+// Save wallet to database
+async function saveWallet(userId, wallet, isClaimWallet = false) {
+    try {
+        if (isClaimWallet) {
+            await pool.query(
+                'INSERT INTO claim_wallets (username, private_key, public_key, from_user_id, amount) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (username) DO UPDATE SET private_key = $2, public_key = $3, from_user_id = $4, amount = $5',
+                [userId, wallet.privateKey, wallet.publicKey, wallet.fromUserId, wallet.amount]
+            );
+        } else {
+            await pool.query(
+                'INSERT INTO user_wallets (user_id, private_key, public_key) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO UPDATE SET private_key = $2, public_key = $3',
+                [userId, wallet.privateKey, wallet.publicKey]
+            );
+        }
+    } catch (error) {
+        console.error('Error saving wallet:', error);
+    }
+}
+
+// Initialize database and load wallets on startup
+initializeDatabase().then(() => {
+    loadWallets();
+});
+
+// Function to get wallet balance
+async function getWalletBalance(publicKey) {
+    try {
+        const balance = await connection.getBalance(new PublicKey(publicKey));
+        return balance / LAMPORTS_PER_SOL;
+    } catch (error) {
+        console.error('Error getting balance:', error);
+        return 0;
+    }
+}
+
+// Function to create wallet from private key
+function createWalletFromPrivateKey(privateKey) {
+    const secretKey = Buffer.from(privateKey, 'hex');
+    return Keypair.fromSecretKey(secretKey);
+}
 
 // Welcome message with tutorial
 const welcomeMessage = `🎉 *Welcome to Solana Tip Bot!* 🎉
 
 This bot helps you send and receive SOL tips on Solana.
 
+*Network:* Mainnet (default)
 *Fee Structure:*
 • Transaction Fee: 10% of tip amount
 • Network Fee: ~0.000005 SOL per transaction
@@ -47,10 +147,12 @@ Use the buttons below to get started!`;
 // Help message
 const helpMessage = `*Solana Tip Bot Commands* 📚
 
-/start - Create your wallet
+/start - Create your funding wallet
 /tip @username amount - Send SOL to someone
-/claim - View your wallet and available balance
+/claim - Claim your received tips
+/help - Show this help message
 /balance - Check your wallet balance
+/network - Switch between Mainnet and Testnet
 /tutorial - Show the tutorial again
 
 *Examples:*
@@ -67,6 +169,11 @@ const helpMessage = `*Solana Tip Bot Commands* 📚
 • Keep your private keys safe
 • Ensure you have enough SOL for tip + fees`;
 
+// Add helper function for transaction links
+function getTransactionLink(signature) {
+    return `https://solscan.io/tx/${signature}`;
+}
+
 // Handle /start command
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
@@ -75,6 +182,7 @@ bot.onText(/\/start/, async (msg) => {
     const keyboard = {
         inline_keyboard: [
             [{ text: "💰 Create/View Wallet", callback_data: "create_wallet" }],
+            [{ text: "🔄 Switch to Testnet", callback_data: "switch_network" }],
             [{ text: "❓ Help", callback_data: "help" }]
         ]
     };
@@ -97,7 +205,7 @@ bot.on('callback_query', async (callbackQuery) => {
     // Handle claim wallet actions
     if (data.startsWith('withdraw_claim_')) {
         const username = data.replace('withdraw_claim_', '');
-        const wallet = userWallets.get(username);
+        const wallet = claimWallets.get(username);
         if (wallet) {
             // Store the username in withdrawal state
             withdrawalState.set(userId.toString(), {
@@ -138,7 +246,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
     else if (data.startsWith('balance_claim_')) {
         const username = data.replace('balance_claim_', '');
-        const wallet = userWallets.get(username);
+        const wallet = claimWallets.get(username);
         if (wallet) {
             const balance = await getWalletBalance(wallet.publicKey);
             const claimKeyboard = {
@@ -156,7 +264,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
     else if (data.startsWith('show_key_')) {
         const username = data.replace('show_key_', '');
-        const wallet = userWallets.get(username);
+        const wallet = claimWallets.get(username);
         if (wallet) {
             const claimKeyboard = {
                 inline_keyboard: [
@@ -177,7 +285,7 @@ bot.on('callback_query', async (callbackQuery) => {
     }
     else if (data.startsWith('back_to_claim_')) {
         const username = data.replace('back_to_claim_', '');
-        const wallet = userWallets.get(username);
+        const wallet = claimWallets.get(username);
         if (wallet) {
             const balance = await getWalletBalance(wallet.publicKey);
             const claimKeyboard = {
@@ -200,6 +308,41 @@ bot.on('callback_query', async (callbackQuery) => {
     else {
         // Existing callback handlers
         switch (data) {
+            case 'switch_network':
+                const currentNetwork = userNetworks.get(userId.toString()) || 'mainnet';
+                const newNetwork = currentNetwork === 'mainnet' ? 'testnet' : 'mainnet';
+                
+                // Update user's network preference
+                userNetworks.set(userId.toString(), newNetwork);
+                
+                // Update connection based on network
+                const connection = new Connection(
+                    newNetwork === 'mainnet' 
+                        ? 'https://api.mainnet-beta.solana.com'
+                        : 'https://api.testnet.solana.com',
+                    'confirmed'
+                );
+                
+                const networkKeyboard = {
+                    inline_keyboard: [
+                        [{ text: "💰 Create/View Wallet", callback_data: "create_wallet" }],
+                        [{ text: newNetwork === 'mainnet' ? "🔄 Switch to Testnet" : "🔄 Switch to Mainnet", callback_data: "switch_network" }],
+                        [{ text: "❓ Help", callback_data: "help" }]
+                    ]
+                };
+                
+                await bot.sendMessage(chatId, 
+                    `🔄 *Network Switched Successfully!*\n\n` +
+                    `Current Network: *${newNetwork.toUpperCase()}*\n\n` +
+                    `*Fee Structure:*\n` +
+                    `• Transaction Fee: *0.01 SOL* per tip\n` +
+                    `• Network Fee: *~0.000005 SOL* per transaction\n\n` +
+                    `*Note:* Make sure you have enough SOL to cover both the tip amount and fees.`, {
+                    parse_mode: 'Markdown',
+                    reply_markup: networkKeyboard
+                });
+                break;
+            
             case 'help':
                 await bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
                 break;
@@ -428,16 +571,21 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
         return;
     }
 
-    // Get or create target user's wallet
-    let targetWallet = userWallets.get(targetUsername);
-    if (!targetWallet) {
+    // Create or get claim wallet for the target user
+    let targetWallet;
+    if (claimWallets.has(targetUsername)) {
+        targetWallet = claimWallets.get(targetUsername);
+        // Accumulate the new tip amount
+        targetWallet.amount = (targetWallet.amount || 0) + amount;
+    } else {
         const newWallet = Keypair.generate();
         targetWallet = {
             privateKey: Buffer.from(newWallet.secretKey).toString('hex'),
-            publicKey: newWallet.publicKey.toString()
+            publicKey: newWallet.publicKey.toString(),
+            fromUserId: fromUserId.toString(),
+            amount: amount
         };
-        userWallets.set(targetUsername, targetWallet);
-        await saveWallet(targetUsername, targetWallet);
+        claimWallets.set(targetUsername, targetWallet);
     }
 
     try {
@@ -451,6 +599,9 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
             parse_mode: 'Markdown'
         });
 
+        // Save the claim wallet to database
+        await saveWallet(targetUsername, targetWallet, true);
+        
         // Create and send transaction
         const senderKeypair = createWalletFromPrivateKey(senderWallet.privateKey);
         
@@ -505,7 +656,7 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
         const tipKeyboard = {
             inline_keyboard: [
                 [{ text: "💳 Create Wallet", url: "https://t.me/TipSolanaBot?start=create" }],
-                [{ text: "🔍 View Transaction", url: getTransactionLink(signature) }]
+                [{ text: "📝 How to Claim", url: "https://t.me/TipSolanaBot?start=help" }]
             ]
         };
 
@@ -517,8 +668,10 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
             `👤 From: @${msg.from.username}\n` +
             `🎯 To: @${targetUsername}\n\n` +
             `@${targetUsername}, you've received a tip! 💝\n\n` +
-            `Your balance has been updated automatically.\n` +
-            `Use /balance to check your new balance.\n\n` +
+            `To claim your tip:\n` +
+            `1️⃣ Message @TipSolanaBot\n` +
+            `2️⃣ Send /claim\n` +
+            `3️⃣ Follow the instructions\n\n` +
             `Transaction: \`${signature}\`\n` +
             `[View on Solscan](${getTransactionLink(signature)})`, {
             parse_mode: 'Markdown',
@@ -534,7 +687,7 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
                 const tipKeyboard = {
                     inline_keyboard: [
                         [{ text: "💳 Create Wallet", url: "https://t.me/TipSolanaBot?start=create" }],
-                        [{ text: "🔍 View Transaction", url: getTransactionLink(signature) }]
+                        [{ text: "📝 How to Claim", url: "https://t.me/TipSolanaBot?start=help" }]
                     ]
                 };
 
@@ -546,8 +699,10 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
                     `👤 From: @${msg.from.username}\n` +
                     `🎯 To: @${targetUsername}\n\n` +
                     `@${targetUsername}, you've received a tip! 💝\n\n` +
-                    `Your balance has been updated automatically.\n` +
-                    `Use /balance to check your new balance.\n\n` +
+                    `To claim your tip:\n` +
+                    `1️⃣ Message @TipSolanaBot\n` +
+                    `2️⃣ Send /claim\n` +
+                    `3️⃣ Follow the instructions\n\n` +
                     `Transaction: \`${signature}\`\n` +
                     `[View on Solscan](${getTransactionLink(signature)})`, {
                     parse_mode: 'Markdown',
@@ -563,6 +718,46 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
     }
 });
 
+// Handle claim command with improved UI
+bot.onText(/\/claim/, async (msg) => {
+    const chatId = msg.chat.id;
+    const username = msg.from.username ? msg.from.username.toLowerCase() : null;
+    
+    if (!username) {
+        await bot.sendMessage(chatId, '❌ Please set a username in your Telegram profile to claim your wallet.');
+        return;
+    }
+    
+    const wallet = claimWallets.get(username);
+    
+    if (!wallet) {
+        await bot.sendMessage(chatId, `❌ No tips found for @${username}. Make sure the username matches exactly (case-insensitive).`);
+        return;
+    }
+
+    // Check if the wallet has received the funds
+    const balance = await getWalletBalance(wallet.publicKey);
+    
+    const claimKeyboard = {
+        inline_keyboard: [
+            [{ text: "📤 Withdraw Funds", callback_data: `withdraw_claim_${username}` }],
+            [{ text: "📊 Check Balance", callback_data: `balance_claim_${username}` }],
+            [{ text: "🔑 Show Private Key", callback_data: `show_key_${username}` }]
+        ]
+    };
+    
+    await bot.sendMessage(chatId, 
+        `🎉 *You have unclaimed tips!*\n\n` +
+        `💰 Available Balance: *${balance} SOL*\n\n` +
+        `*What would you like to do?*\n\n` +
+        `📤 Withdraw - Send funds to another wallet\n` +
+        `📊 Check Balance - View your current balance\n` +
+        `🔑 Show Private Key - Get your wallet details`, {
+        parse_mode: 'Markdown',
+        reply_markup: claimKeyboard
+    });
+});
+
 // Handle withdrawal messages
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
@@ -572,7 +767,7 @@ bot.on('message', async (msg) => {
     // Check if user is in withdrawal process
     const withdrawal = withdrawalState.get(userId.toString());
     if (withdrawal) {
-        const wallet = userWallets.get(withdrawal.username);
+        const wallet = claimWallets.get(withdrawal.username);
         if (!wallet) {
             withdrawalState.delete(userId.toString());
             await bot.sendMessage(chatId, "❌ Error: Claim wallet not found.");
@@ -729,6 +924,44 @@ bot.on('message', async (msg) => {
     }
 });
 
+// Add network toggle command
+bot.onText(/\/network/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    const currentNetwork = userNetworks.get(userId.toString()) || 'mainnet';
+    const newNetwork = currentNetwork === 'mainnet' ? 'testnet' : 'mainnet';
+    
+    // Update user's network preference
+    userNetworks.set(userId.toString(), newNetwork);
+    
+    // Update connection based on network
+    const connection = new Connection(
+        newNetwork === 'mainnet' 
+            ? 'https://api.mainnet-beta.solana.com'
+            : 'https://api.testnet.solana.com',
+        'confirmed'
+    );
+    
+    const networkKeyboard = {
+        inline_keyboard: [
+            [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
+            [{ text: "📊 Check Balance", callback_data: "check_balance" }]
+        ]
+    };
+    
+    await bot.sendMessage(chatId, 
+        `🔄 *Network Switched Successfully!*\n\n` +
+        `Current Network: *${newNetwork.toUpperCase()}*\n\n` +
+        `*Fee Structure:*\n` +
+        `• Transaction Fee: *0.01 SOL* per tip\n` +
+        `• Network Fee: *~0.000005 SOL* per transaction\n\n` +
+        `*Note:* Make sure you have enough SOL to cover both the tip amount and fees.`, {
+        parse_mode: 'Markdown',
+        reply_markup: networkKeyboard
+    });
+});
+
 // Secret command to count total users
 bot.onText(/\/kitne/, async (msg) => {
     const chatId = msg.chat.id;
@@ -746,51 +979,4 @@ bot.onText(/\/kitne/, async (msg) => {
         console.error('Error counting users:', error);
         await bot.sendMessage(chatId, '❌ Error fetching user count.');
     }
-});
-
-// Handle claim command with improved UI
-bot.onText(/\/claim/, async (msg) => {
-    const chatId = msg.chat.id;
-    const username = msg.from.username ? msg.from.username.toLowerCase() : null;
-    
-    if (!username) {
-        await bot.sendMessage(chatId, '❌ Please set a username in your Telegram profile to use this bot.');
-        return;
-    }
-    
-    const wallet = userWallets.get(username);
-    
-    if (!wallet) {
-        const keyboard = {
-            inline_keyboard: [
-                [{ text: "💳 Create Wallet", callback_data: "create_wallet" }]
-            ]
-        };
-        await bot.sendMessage(chatId, `❌ No wallet found for @${username}. Please create a wallet first.`, {
-            reply_markup: keyboard
-        });
-        return;
-    }
-
-    // Check wallet balance
-    const balance = await getWalletBalance(wallet.publicKey);
-    
-    const claimKeyboard = {
-        inline_keyboard: [
-            [{ text: "📤 Withdraw Funds", callback_data: `withdraw_claim_${username}` }],
-            [{ text: "📊 Check Balance", callback_data: `balance_claim_${username}` }],
-            [{ text: "🔑 Show Private Key", callback_data: `show_key_${username}` }]
-        ]
-    };
-    
-    await bot.sendMessage(chatId, 
-        `🎉 *Your Wallet Details*\n\n` +
-        `💰 Available Balance: *${balance} SOL*\n\n` +
-        `*What would you like to do?*\n\n` +
-        `📤 Withdraw - Send funds to another wallet\n` +
-        `📊 Check Balance - View your current balance\n` +
-        `🔑 Show Private Key - Get your wallet details`, {
-        parse_mode: 'Markdown',
-        reply_markup: claimKeyboard
-    });
 });
