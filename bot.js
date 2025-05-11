@@ -12,7 +12,7 @@ const {
 const { Pool } = require('pg');
 
 // Initialize bot with hardcoded token
-const bot = new TelegramBot('7721938745:AAHGaWGqJlCcHbmiKlapve8cox3gFVVqzyE', { polling: true });
+const bot = new TelegramBot('7909783368:AAGGmkndrpybLWUtdAvm91MVJG4Oz57vilA', { polling: true });
 
 // Connect to Solana testnet
 const connection = new Connection('https://api.testnet.solana.com', 'confirmed');
