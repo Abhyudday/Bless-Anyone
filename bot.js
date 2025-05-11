@@ -304,7 +304,17 @@ bot.on('callback_query', async (callbackQuery) => {
         // Existing callback handlers
         switch (data) {
             case 'tutorial':
-                await bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
+                const tutorialKeyboard = {
+                    inline_keyboard: [
+                        [{ text: "💰 Create/View Wallet", callback_data: "create_wallet" }],
+                        [{ text: "📝 Tutorial", callback_data: "tutorial" }],
+                        [{ text: "❓ Help", callback_data: "help" }]
+                    ]
+                };
+                await bot.sendMessage(chatId, welcomeMessage, { 
+                    parse_mode: 'Markdown',
+                    reply_markup: tutorialKeyboard
+                });
                 break;
             
             case 'help':
@@ -797,24 +807,5 @@ bot.onText(/\/network/, async (msg) => {
         `*Note:* Make sure you have enough SOL to cover both the tip amount and fees.`, {
         parse_mode: 'Markdown',
         reply_markup: networkKeyboard
-    });
-});
-
-// Handle tutorial command
-bot.onText(/\/tutorial/, async (msg) => {
-    const chatId = msg.chat.id;
-    
-    // Send welcome message with buttons
-    const keyboard = {
-        inline_keyboard: [
-            [{ text: "💰 Create/View Wallet", callback_data: "create_wallet" }],
-            [{ text: "📝 Tutorial", callback_data: "tutorial" }],
-            [{ text: "❓ Help", callback_data: "help" }]
-        ]
-    };
-    
-    await bot.sendMessage(chatId, welcomeMessage, { 
-        parse_mode: 'Markdown',
-        reply_markup: keyboard
     });
 });
