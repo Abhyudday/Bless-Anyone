@@ -34,6 +34,9 @@ let claimWallets = new Map();
 const FEES_WALLET = 'DB3NZgGPsANwp5RBBMEK2A9ehWeN41QCELRt8WYyL8d8';
 const FEE_AMOUNT = 0.01; // 0.01 SOL fee per transaction
 
+// Add network state tracking
+let userNetworks = new Map(); // Store user's preferred network
+
 // Create tables if they don't exist
 async function initializeDatabase() {
     try {
@@ -134,6 +137,11 @@ const welcomeMessage = `🎉 *Welcome to Solana Tip Bot!* 🎉
 
 This bot helps you send and receive SOL tips on Solana.
 
+*Network:* Mainnet (default)
+*Fee Structure:*
+• Transaction Fee: 0.01 SOL per tip
+• Network Fee: ~0.000005 SOL per transaction
+
 Use the buttons below to get started!`;
 
 // Help message
@@ -144,16 +152,22 @@ const helpMessage = `*Solana Tip Bot Commands* 📚
 /claim - Claim your received tips
 /help - Show this help message
 /balance - Check your wallet balance
+/network - Switch between Mainnet and Testnet
 /tutorial - Show the tutorial again
 
 *Examples:*
 • /tip @john 0.5
 • /tip @alice 1.2
 
+*Fee Structure:*
+• Transaction Fee: 0.01 SOL per tip
+• Network Fee: ~0.000005 SOL per transaction
+
 *Tips:*
 • Always verify the username
 • Check your balance before sending
-• Keep your private keys safe`;
+• Keep your private keys safe
+• Ensure you have enough SOL for tip + fees`;
 
 // Handle /start command
 bot.onText(/\/start/, async (msg) => {
@@ -591,7 +605,8 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
         await bot.sendMessage(chatId, 
             `🎉 *Tip Sent Successfully!*\n\n` +
             `💰 Amount: *${amount} SOL*\n` +
-            `💸 Fee: *${FEE_AMOUNT} SOL*\n` +
+            `💸 Transaction Fee: *0.01 SOL*\n` +
+            `🌐 Network Fee: *~0.000005 SOL*\n` +
             `👤 From: @${msg.from.username}\n` +
             `🎯 To: @${targetUsername}\n\n` +
             `@${targetUsername}, you've received a tip! 💝\n\n` +
@@ -745,4 +760,42 @@ bot.on('message', async (msg) => {
             }
         }
     }
+});
+
+// Add network toggle command
+bot.onText(/\/network/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    const currentNetwork = userNetworks.get(userId.toString()) || 'mainnet';
+    const newNetwork = currentNetwork === 'mainnet' ? 'testnet' : 'mainnet';
+    
+    // Update user's network preference
+    userNetworks.set(userId.toString(), newNetwork);
+    
+    // Update connection based on network
+    const connection = new Connection(
+        newNetwork === 'mainnet' 
+            ? 'https://api.mainnet-beta.solana.com'
+            : 'https://api.testnet.solana.com',
+        'confirmed'
+    );
+    
+    const networkKeyboard = {
+        inline_keyboard: [
+            [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
+            [{ text: "📊 Check Balance", callback_data: "check_balance" }]
+        ]
+    };
+    
+    await bot.sendMessage(chatId, 
+        `🔄 *Network Switched Successfully!*\n\n` +
+        `Current Network: *${newNetwork.toUpperCase()}*\n\n` +
+        `*Fee Structure:*\n` +
+        `• Transaction Fee: *0.01 SOL* per tip\n` +
+        `• Network Fee: *~0.000005 SOL* per transaction\n\n` +
+        `*Note:* Make sure you have enough SOL to cover both the tip amount and fees.`, {
+        parse_mode: 'Markdown',
+        reply_markup: networkKeyboard
+    });
 });
