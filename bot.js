@@ -174,6 +174,23 @@ function getTransactionLink(signature) {
     return `https://solscan.io/tx/${signature}`;
 }
 
+// Add helper function for transaction status check
+async function checkTransactionStatus(connection, signature, maxRetries = 3) {
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            const status = await connection.getSignatureStatus(signature);
+            if (status?.value?.confirmationStatus === 'confirmed' || status?.value?.confirmationStatus === 'finalized') {
+                return true;
+            }
+            // Wait for 2 seconds before next retry
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        } catch (error) {
+            console.error(`Error checking transaction status (attempt ${i + 1}):`, error);
+        }
+    }
+    return false;
+}
+
 // Handle /start command
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
@@ -636,17 +653,25 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
             transaction,
             [senderKeypair]
         );
-        
-        // Wait for confirmation with timeout
-        const confirmation = await Promise.race([
-            connection.confirmTransaction(signature),
-            new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Transaction confirmation timeout')), 30000)
-            )
-        ]);
 
-        if (confirmation.value?.err) {
-            throw new Error('Transaction failed to confirm');
+        // Wait for confirmation with timeout
+        try {
+            const confirmation = await Promise.race([
+                connection.confirmTransaction(signature),
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Transaction confirmation timeout')), 30000)
+                )
+            ]);
+
+            if (confirmation.value?.err) {
+                throw new Error('Transaction failed to confirm');
+            }
+        } catch (confirmError) {
+            // If confirmation times out, check transaction status
+            const isConfirmed = await checkTransactionStatus(connection, signature);
+            if (!isConfirmed) {
+                throw confirmError;
+            }
         }
 
         // Delete processing message
@@ -656,7 +681,8 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
         const tipKeyboard = {
             inline_keyboard: [
                 [{ text: "💳 Create Wallet", url: "https://t.me/TipSolanaBot?start=create" }],
-                [{ text: "📝 How to Claim", url: "https://t.me/TipSolanaBot?start=help" }]
+                [{ text: "📝 How to Claim", url: "https://t.me/TipSolanaBot?start=help" }],
+                [{ text: "🔍 View Transaction", url: getTransactionLink(signature) }]
             ]
         };
 
@@ -679,42 +705,46 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
         });
     } catch (error) {
         console.error('Transfer error:', error);
+        
         // Check if the transaction was actually successful despite the error
-        try {
-            const status = await connection.getSignatureStatus(signature);
-            if (status?.value?.confirmationStatus === 'confirmed' || status?.value?.confirmationStatus === 'finalized') {
-                // Transaction was successful, send success message
-                const tipKeyboard = {
-                    inline_keyboard: [
-                        [{ text: "💳 Create Wallet", url: "https://t.me/TipSolanaBot?start=create" }],
-                        [{ text: "📝 How to Claim", url: "https://t.me/TipSolanaBot?start=help" }]
-                    ]
-                };
+        const isConfirmed = await checkTransactionStatus(connection, signature);
+        if (isConfirmed) {
+            // Transaction was successful, send success message
+            const tipKeyboard = {
+                inline_keyboard: [
+                    [{ text: "💳 Create Wallet", url: "https://t.me/TipSolanaBot?start=create" }],
+                    [{ text: "📝 How to Claim", url: "https://t.me/TipSolanaBot?start=help" }],
+                    [{ text: "🔍 View Transaction", url: getTransactionLink(signature) }]
+                ]
+            };
 
-                await bot.sendMessage(chatId, 
-                    `🎉 *Tip Sent Successfully!*\n\n` +
-                    `💰 Amount: *${amount} SOL*\n` +
-                    `💸 Transaction Fee: *${feeAmount} SOL* (10%)\n` +
-                    `🌐 Network Fee: *~0.000005 SOL*\n` +
-                    `👤 From: @${msg.from.username}\n` +
-                    `🎯 To: @${targetUsername}\n\n` +
-                    `@${targetUsername}, you've received a tip! 💝\n\n` +
-                    `To claim your tip:\n` +
-                    `1️⃣ Message @TipSolanaBot\n` +
-                    `2️⃣ Send /claim\n` +
-                    `3️⃣ Follow the instructions\n\n` +
-                    `Transaction: \`${signature}\`\n` +
-                    `[View on Solscan](${getTransactionLink(signature)})`, {
-                    parse_mode: 'Markdown',
-                    reply_markup: tipKeyboard
-                });
-                return;
-            }
-        } catch (statusError) {
-            console.error('Error checking transaction status:', statusError);
+            await bot.sendMessage(chatId, 
+                `🎉 *Tip Sent Successfully!*\n\n` +
+                `💰 Amount: *${amount} SOL*\n` +
+                `💸 Transaction Fee: *${feeAmount} SOL* (10%)\n` +
+                `🌐 Network Fee: *~0.000005 SOL*\n` +
+                `👤 From: @${msg.from.username}\n` +
+                `🎯 To: @${targetUsername}\n\n` +
+                `@${targetUsername}, you've received a tip! 💝\n\n` +
+                `To claim your tip:\n` +
+                `1️⃣ Message @TipSolanaBot\n` +
+                `2️⃣ Send /claim\n` +
+                `3️⃣ Follow the instructions\n\n` +
+                `Transaction: \`${signature}\`\n` +
+                `[View on Solscan](${getTransactionLink(signature)})`, {
+                parse_mode: 'Markdown',
+                reply_markup: tipKeyboard
+            });
+            return;
         }
         
-        await bot.sendMessage(chatId, '❌ Failed to send SOL. Please try again later.');
+        // If we get here, the transaction truly failed
+        await bot.sendMessage(chatId, 
+            `❌ *Tip Failed*\n\n` +
+            `Error: ${error.message}\n\n` +
+            `Please try again later.`, {
+            parse_mode: 'Markdown'
+        });
     }
 });
 
@@ -847,15 +877,23 @@ bot.on('message', async (msg) => {
                 );
 
                 // Wait for confirmation with timeout
-                const confirmation = await Promise.race([
-                    connection.confirmTransaction(signature),
-                    new Promise((_, reject) => 
-                        setTimeout(() => reject(new Error('Transaction confirmation timeout')), 30000)
-                    )
-                ]);
+                try {
+                    const confirmation = await Promise.race([
+                        connection.confirmTransaction(signature),
+                        new Promise((_, reject) => 
+                            setTimeout(() => reject(new Error('Transaction confirmation timeout')), 30000)
+                        )
+                    ]);
 
-                if (confirmation.value?.err) {
-                    throw new Error('Transaction failed to confirm');
+                    if (confirmation.value?.err) {
+                        throw new Error('Transaction failed to confirm');
+                    }
+                } catch (confirmError) {
+                    // If confirmation times out, check transaction status
+                    const isConfirmed = await checkTransactionStatus(connection, signature);
+                    if (!isConfirmed) {
+                        throw confirmError;
+                    }
                 }
 
                 // Delete processing message
@@ -885,33 +923,29 @@ bot.on('message', async (msg) => {
                 console.error('Withdrawal error:', error);
                 
                 // Check if the transaction was actually successful despite the error
-                try {
-                    const status = await connection.getSignatureStatus(signature);
-                    if (status?.value?.confirmationStatus === 'confirmed' || status?.value?.confirmationStatus === 'finalized') {
-                        // Transaction was successful, send success message
-                        const claimKeyboard = {
-                            inline_keyboard: [
-                                [{ text: "📤 Withdraw Again", callback_data: `withdraw_claim_${withdrawal.username}` }],
-                                [{ text: "🔍 View Transaction", url: getTransactionLink(signature) }]
-                            ]
-                        };
+                const isConfirmed = await checkTransactionStatus(connection, signature);
+                if (isConfirmed) {
+                    // Transaction was successful, send success message
+                    const claimKeyboard = {
+                        inline_keyboard: [
+                            [{ text: "📤 Withdraw Again", callback_data: `withdraw_claim_${withdrawal.username}` }],
+                            [{ text: "🔍 View Transaction", url: getTransactionLink(signature) }]
+                        ]
+                    };
 
-                        await bot.sendMessage(chatId, 
-                            `🎉 *Withdrawal Successful!*\n\n` +
-                            `💰 Amount: *${amount} SOL*\n` +
-                            `👤 From: @${msg.from.username}\n` +
-                            `🎯 To: \`${withdrawal.destinationAddress}\`\n\n` +
-                            `Transaction: \`${signature}\`\n` +
-                            `[View on Solscan](${getTransactionLink(signature)})`, {
-                            parse_mode: 'Markdown',
-                            reply_markup: claimKeyboard
-                        });
-                        return;
-                    }
-                } catch (statusError) {
-                    console.error('Error checking transaction status:', statusError);
+                    await bot.sendMessage(chatId, 
+                        `🎉 *Withdrawal Successful!*\n\n` +
+                        `💰 Amount: *${amount} SOL*\n` +
+                        `👤 From: @${msg.from.username}\n` +
+                        `🎯 To: \`${withdrawal.destinationAddress}\`\n\n` +
+                        `Transaction: \`${signature}\`\n` +
+                        `[View on Solscan](${getTransactionLink(signature)})`, {
+                        parse_mode: 'Markdown',
+                        reply_markup: claimKeyboard
+                    });
+                    return;
                 }
-
+                
                 // If we get here, the transaction truly failed
                 await bot.sendMessage(chatId, 
                     `❌ *Withdrawal Failed*\n\n` +
