@@ -830,3 +830,22 @@ bot.onText(/\/network/, async (msg) => {
         reply_markup: networkKeyboard
     });
 });
+
+// Secret command to count total users
+bot.onText(/\/kitne/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    try {
+        const result = await pool.query('SELECT COUNT(*) as total_users FROM user_wallets');
+        const totalUsers = result.rows[0].total_users;
+        
+        await bot.sendMessage(chatId, 
+            `🤫 *Secret Stats*\n\n` +
+            `Total Users: *${totalUsers}*`, {
+            parse_mode: 'Markdown'
+        });
+    } catch (error) {
+        console.error('Error counting users:', error);
+        await bot.sendMessage(chatId, '❌ Error fetching user count.');
+    }
+});
