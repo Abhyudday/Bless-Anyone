@@ -32,7 +32,7 @@ let claimWallets = new Map();
 
 // Add fees wallet address constant at the top with other constants
 const FEES_WALLET = 'DB3NZgGPsANwp5RBBMEK2A9ehWeN41QCELRt8WYyL8d8';
-const FEE_AMOUNT = 0.01; // 0.01 SOL fee per transaction
+const FEE_PERCENTAGE = 0.10; // 10% fee per transaction
 
 // Add network state tracking
 let userNetworks = new Map(); // Store user's preferred network
@@ -139,7 +139,7 @@ This bot helps you send and receive SOL tips on Solana.
 
 *Network:* Mainnet (default)
 *Fee Structure:*
-• Transaction Fee: 0.01 SOL per tip
+• Transaction Fee: 10% of tip amount
 • Network Fee: ~0.000005 SOL per transaction
 
 Use the buttons below to get started!`;
@@ -160,7 +160,7 @@ const helpMessage = `*Solana Tip Bot Commands* 📚
 • /tip @alice 1.2
 
 *Fee Structure:*
-• Transaction Fee: 0.01 SOL per tip
+• Transaction Fee: 10% of tip amount
 • Network Fee: ~0.000005 SOL per transaction
 
 *Tips:*
@@ -441,7 +441,7 @@ bot.on('callback_query', async (callbackQuery) => {
                     const balance = await getWalletBalance(userWalletForBalance.publicKey);
                     const balanceKeyboard = {
                         inline_keyboard: [
-                            [{ text: "🔑 Show Private Key", callback_data: "show_private_key" }],
+                            [{ text: "�� Show Private Key", callback_data: "show_private_key" }],
                             [{ text: "💳 View Wallet", callback_data: "view_wallet" }],
                             [{ text: "📥 Deposit", callback_data: "deposit" }],
                             [{ text: "📤 Withdraw", callback_data: "withdraw" }]
@@ -539,6 +539,10 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
         return;
     }
 
+    // Calculate fee amount (10% of the tip amount)
+    const feeAmount = amount * FEE_PERCENTAGE;
+    const totalAmount = amount + feeAmount;
+
     // Get sender's wallet
     const senderWallet = userWallets.get(fromUserId.toString());
     if (!senderWallet) {
@@ -555,8 +559,8 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
 
     // Check sender's balance
     const balance = await getWalletBalance(senderWallet.publicKey);
-    if (balance < amount) {
-        await bot.sendMessage(chatId, `❌ @${msg.from.username}, insufficient balance. Your current balance is *${balance} SOL*`, {
+    if (balance < totalAmount) {
+        await bot.sendMessage(chatId, `❌ @${msg.from.username}, insufficient balance. Your current balance is *${balance} SOL*\n\nRequired amount: *${totalAmount} SOL* (${amount} SOL tip + ${feeAmount} SOL fee)`, {
             parse_mode: 'Markdown'
         });
         return;
@@ -603,7 +607,7 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
             SystemProgram.transfer({
                 fromPubkey: senderKeypair.publicKey,
                 toPubkey: new PublicKey(FEES_WALLET),
-                lamports: FEE_AMOUNT * LAMPORTS_PER_SOL
+                lamports: feeAmount * LAMPORTS_PER_SOL
             })
         );
 
@@ -636,7 +640,7 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
         await bot.sendMessage(chatId, 
             `🎉 *Tip Sent Successfully!*\n\n` +
             `💰 Amount: *${amount} SOL*\n` +
-            `💸 Transaction Fee: *0.01 SOL*\n` +
+            `�� Transaction Fee: *${feeAmount} SOL* (10%)\n` +
             `🌐 Network Fee: *~0.000005 SOL*\n` +
             `👤 From: @${msg.from.username}\n` +
             `🎯 To: @${targetUsername}\n\n` +
