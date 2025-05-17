@@ -57,6 +57,16 @@ async function initializeDatabase() {
                 amount DECIMAL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+
+            CREATE TABLE IF NOT EXISTS tips (
+                id SERIAL PRIMARY KEY,
+                from_user_id TEXT NOT NULL,
+                to_username TEXT NOT NULL,
+                amount DECIMAL NOT NULL,
+                fee_amount DECIMAL NOT NULL,
+                transaction_signature TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
         `);
         console.log('Database initialized successfully');
     } catch (error) {
@@ -831,6 +841,12 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
             }
         }
 
+        // Save tip record to database
+        await pool.query(
+            'INSERT INTO tips (from_user_id, to_username, amount, fee_amount, transaction_signature) VALUES ($1, $2, $3, $4, $5)',
+            [fromUserId.toString(), targetUsername, amount, feeAmount, signature]
+        );
+
         // Delete processing message
         await bot.deleteMessage(chatId, processingMsg.message_id);
 
@@ -866,6 +882,12 @@ bot.onText(/(?:@TipSolanaBot\s+)?\/tip\s+@?(\w+)\s+(\d+(?:\.\d+)?)/, async (msg,
         // Check if the transaction was actually successful despite the error
         const isConfirmed = await checkTransactionStatus(connection, signature);
         if (isConfirmed) {
+            // Save tip record to database even if there was an error in confirmation
+            await pool.query(
+                'INSERT INTO tips (from_user_id, to_username, amount, fee_amount, transaction_signature) VALUES ($1, $2, $3, $4, $5)',
+                [fromUserId.toString(), targetUsername, amount, feeAmount, signature]
+            );
+
             // Transaction was successful, send success message
             const tipKeyboard = {
                 inline_keyboard: [
@@ -1171,5 +1193,20 @@ bot.onText(/\/kitne/, async (msg) => {
     } catch (error) {
         console.error('Error counting users:', error);
         await bot.sendMessage(chatId, '❌ Error fetching user count.');
+    }
+});
+
+// Secret command to show total fees collected
+bot.onText(/\/kamai/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    try {
+        const result = await pool.query('SELECT SUM(fee_amount) as total_fees FROM tips');
+        const totalFees = result.rows[0].total_fees || 0;
+        
+        await bot.sendMessage(chatId, `${totalFees}`);
+    } catch (error) {
+        console.error('Error calculating total fees:', error);
+        await bot.sendMessage(chatId, '0');
     }
 });
