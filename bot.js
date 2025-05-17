@@ -193,10 +193,11 @@ async function checkTransactionStatus(connection, signature, maxRetries = 3) {
 }
 
 // Handle /start command
-bot.onText(/\/start/, async (msg) => {
+bot.onText(/^\/start(?:\s+(.+))?$/, async (msg, match) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     const username = msg.from.username ? msg.from.username.toLowerCase() : null;
+    const startParam = match[1]; // Get the start parameter if any
     
     // Send welcome message with buttons
     const keyboard = {
@@ -371,7 +372,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 `⏳ *Processing Transfer*\n\n` +
                 `💰 Amount: *${maxTransferAmount} SOL*\n` +
                 `💸 Network Fee: *${NETWORK_FEE} SOL*\n` +
-                `�� From: Claim Wallet\n` +
+                `👤 From: Claim Wallet\n` +
                 `🎯 To: Funding Wallet\n\n` +
                 `Please wait while we process your transaction...`, {
                 parse_mode: 'Markdown'
