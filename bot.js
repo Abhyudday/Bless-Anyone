@@ -12,15 +12,15 @@ const {
 } = require('@solana/web3.js');
 const { Pool } = require('pg');
 
-// Initialize bot with hardcoded token
-const bot = new TelegramBot('7909783368:AAGGmkndrpybLWUtdAvm91MVJG4Oz57vilA', { polling: true });
+// Initialize bot with token from environment variable
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
 // Connect to Solana mainnet
 const connection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
 
-// Initialize PostgreSQL connection with hardcoded URL
+// Initialize PostgreSQL connection with environment variable
 const pool = new Pool({
-    connectionString: 'postgresql://postgres:zAGFInFgEecNytNOuHXrxoVcDZyWxaQc@postgres.railway.internal:5432/railway',
+    connectionString: process.env.DATABASE_URL,
     ssl: {
         rejectUnauthorized: false
     }
@@ -30,7 +30,7 @@ const pool = new Pool({
 let userWallets = new Map();
 let claimWallets = new Map();
 
-// Add fees wallet address constant at the top with other constants
+// Add fees wallet address constant
 const FEES_WALLET = 'DB3NZgGPsANwp5RBBMEK2A9ehWeN41QCELRt8WYyL8d8';
 const FEE_PERCENTAGE = 0.10; // 10% fee per transaction
 const NETWORK_FEE = 0.000005; // ~0.000005 SOL per transaction
