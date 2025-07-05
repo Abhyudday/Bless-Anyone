@@ -13,7 +13,7 @@ const {
 const { Pool } = require('pg');
 
 // Initialize bot with token from environment variable
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
 
 // Connect to Solana mainnet
 const connection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
@@ -1210,3 +1210,18 @@ bot.onText(/\/kamai/, async (msg) => {
         await bot.sendMessage(chatId, '0');
     }
 });
+
+// Drop any existing webhook and start polling to ensure only one receiver
+(async () => {
+    try {
+        await bot.deleteWebhook({ drop_pending_updates: true });
+        await bot.startPolling();
+        console.log('Bot started polling successfully');
+    } catch (err) {
+        console.error('Failed to start polling:', err);
+    }
+})();
+
+// Gracefully stop polling on shutdown
+process.once('SIGINT', () => bot.stopPolling().then(() => process.exit(0)));
+process.once('SIGTERM', () => bot.stopPolling().then(() => process.exit(0)));
